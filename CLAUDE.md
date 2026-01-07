@@ -12,9 +12,16 @@ Claude Code plugin providing Senior Cloudflare Systems Engineer capabilities.
 ```
 cloudflare-engineer/
 ├── .claude-plugin/plugin.json  # Manifest (name, description, version)
-├── skills/*/SKILL.md           # Auto-discovered skills
-├── agents/*.md                 # Auto-discovered agents
-├── commands/*.md               # Slash commands
+├── skills/
+│   ├── */SKILL.md              # Auto-discovered skills
+│   ├── probes/SKILL.md         # MCP audit probe queries
+│   └── patterns/               # Architecture patterns
+│       ├── SKILL.md
+│       ├── service-bindings.md
+│       ├── d1-batching.md
+│       └── circuit-breaker.md
+├── agents/*.md                 # Auto-discovered agents (with MCP tools)
+├── commands/*.md               # Slash commands (--validate support)
 ├── hooks/
 │   ├── hooks.json              # Hook configuration
 │   └── pre-deploy-check.py     # Python validation script
@@ -89,7 +96,10 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 | `skills/optimize-costs/SKILL.md` | Pricing formulas, cost patterns |
 | `skills/guardian/SKILL.md` | Security checklist, OWASP patterns |
 | `skills/architect/SKILL.md` | Mermaid templates, wrangler.toml patterns |
+| `skills/probes/SKILL.md` | MCP tool queries for live validation |
+| `skills/patterns/SKILL.md` | Architecture pattern catalog |
 | `hooks/pre-deploy-check.py` | Validation rules (SEC*, RES*, COST*, PERF*) |
+| `commands/cf-pattern.md` | Pattern application command |
 
 ## Validation Rule IDs
 
@@ -111,4 +121,5 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 
 ## Version History
 
+- v1.1.0 - Live validation (`--validate`), provenance tagging, probes skill, patterns skill (7 skills, 3 agents, 4 commands, 1 hook)
 - v1.0.0 - Initial release (5 skills, 3 agents, 3 commands, 1 hook)

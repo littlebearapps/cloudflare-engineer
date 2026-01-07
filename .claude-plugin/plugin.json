@@ -1,7 +1,7 @@
 {
   "name": "cloudflare-engineer",
-  "version": "1.0.0",
-  "description": "Senior Cloudflare Systems Engineer capabilities - architecture design, cost optimization, security auditing, and implementation patterns for Workers, D1, R2, KV, Queues, and the full Cloudflare stack",
+  "version": "1.1.0",
+  "description": "Senior Cloudflare Systems Engineer capabilities - architecture design, cost optimization, security auditing, and implementation patterns for Workers, D1, R2, KV, Queues, and the full Cloudflare stack. Now with live validation via MCP tools and actionable patterns.",
   "author": {
     "name": "Little Bear Apps",
     "email": "hello@littlebearapps.com"

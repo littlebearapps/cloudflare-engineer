@@ -216,9 +216,49 @@ Flag missing indexes for:
 }
 ```
 
+## Live Validation with Probes
+
+When MCP tools are available (via `--validate` mode in `/cf-audit`), enhance static findings with live data.
+
+Reference @skills/probes/SKILL.md for detailed query patterns.
+
+### Security Validation
+- **Error rate analysis**: High errors on specific paths may indicate attacks
+- **Request patterns**: Verify authentication is actually enforced
+- **Resource exposure**: Check KV/R2 for public access settings
+
+### Performance Validation
+- **EXPLAIN QUERY PLAN**: Verify D1 index usage
+- **Latency percentiles**: P50/P95/P99 analysis
+- **CPU time analysis**: Identify hotspots
+
+### Resilience Validation
+- **Queue health**: Check DLQ depth and retry rates
+- **Error patterns**: Identify cascading failures
+
+## Provenance Tagging
+
+Tag findings based on data source:
+- `[STATIC]` - Inferred from code/config analysis only
+- `[LIVE-VALIDATED]` - Confirmed by observability data
+- `[LIVE-REFUTED]` - Code smell not observed in production
+- `[INCOMPLETE]` - MCP tools unavailable for verification
+
+## Pattern Recommendations
+
+When issues are found, recommend applicable patterns from @skills/patterns/:
+
+| Finding | Recommended Pattern |
+|---------|-------------------|
+| Per-row D1 inserts | `d1-batching` |
+| External API issues | `circuit-breaker` |
+| Monolithic Worker | `service-bindings` |
+
 ## Tips
 
 - Run before every deployment
+- Use `--validate` for production-ready verification
 - Focus on CRITICAL and HIGH first
 - Use `--fix` suggestions to auto-generate patches
 - Compare scores over time to track improvements
+- `[LIVE-REFUTED]` findings may still be worth fixing proactively
