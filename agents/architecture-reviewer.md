@@ -105,6 +105,21 @@ If any MCP call fails:
 2. Continue with static analysis
 3. Tag affected findings as `[INCOMPLETE]`
 
+## Cost Watchlist Reference
+
+When reviewing architectures with cost implications, reference `${CLAUDE_PLUGIN_ROOT}/COST_SENSITIVE_RESOURCES.md`:
+
+| Finding | Cost Watchlist Reference | Provenance Tag |
+|---------|-------------------------|----------------|
+| D1 per-row inserts | TRAP-D1-001 | `[STATIC:COST_WATCHLIST]` |
+| R2 write-heavy | TRAP-R2-001 | `[STATIC:COST_WATCHLIST]` |
+| Durable Objects usage | TRAP-DO-001 | `[STATIC:COST_WATCHLIST]` |
+| KV write-heavy | TRAP-KV-001 | `[STATIC:COST_WATCHLIST]` |
+| Queue high retries | TRAP-Q-001 | `[STATIC:COST_WATCHLIST]` |
+| Large AI models | TRAP-AI-001 | `[STATIC:COST_WATCHLIST]` |
+
+When architecture decisions have cost implications, cite the specific TRAP identifier and tag with `[STATIC:COST_WATCHLIST]` or `[LIVE-VALIDATED:COST_WATCHLIST]`.
+
 ## Review Scope
 
 ### Architecture Patterns

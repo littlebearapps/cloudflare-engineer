@@ -189,12 +189,146 @@ When adding new validation rules to the pre-deploy hook:
 | RES | Resilience | RES001 - Missing DLQ |
 | COST | Cost | COST001 - High retry count |
 | PERF | Performance | PERF001 - Smart Placement |
+| BUDGET | Budget enforcement | BUDGET001 - DO usage warning |
+| PRIV | Privacy | PRIV001 - PII in logs |
+| ZT | Zero Trust | ZT001 - Staging without Access |
 
 Severity levels:
 - **CRITICAL**: Blocks deploy, security risk
 - **HIGH**: Should fix before deploy
 - **MEDIUM**: Recommended improvement
 - **LOW**: Nice to have
+- **INFO**: Informational (Budget warnings)
+
+## Adding New Cloudflare Products to Guardrails
+
+When Cloudflare releases new services or you identify new cost/security patterns, follow this process to add guardrail logic:
+
+### 1. Update Cost Watchlist
+
+Add new cost traps to `COST_SENSITIVE_RESOURCES.md`:
+
+```markdown
+## New Service Name
+
+### Pricing Model (Year)
+
+| Operation | Cost | Free Tier |
+|-----------|------|-----------|
+| ... | ... | ... |
+
+### Cost Traps
+
+#### TRAP-SVC-001: Description (Severity)
+
+**Pattern**: What causes the high cost
+
+\`\`\`typescript
+// EXPENSIVE: Anti-pattern
+...
+
+// OPTIMIZED: Correct pattern
+...
+\`\`\`
+
+**Detection**:
+- `[STATIC]`: How to detect via code analysis
+- `[LIVE-VALIDATED]`: How to confirm via observability
+
+**Guardian Rule**: `BUDGETXXX`
+```
+
+### 2. Add Guardian Skill Rules
+
+Update `skills/guardian/SKILL.md`:
+
+1. Add to Budget Enforcement Triggers table
+2. Add audit rule to Budget Audit Rules table with ID (BUDGET007+)
+3. Add detection logic description to Budget Whisperer section
+
+### 3. Add Pre-Deploy Hook Checks (if applicable)
+
+If the trap can be detected statically from wrangler config:
+
+```python
+# hooks/pre-deploy-check.py
+
+def check_new_service_trap(config: dict) -> list[dict]:
+    """Check for new service cost traps."""
+    issues = []
+
+    # Check bindings
+    if "new_service" in config:
+        # Detection logic
+        issues.append({
+            "id": "BUDGETXXX",
+            "severity": "MEDIUM",
+            "message": "Description of issue",
+            "fix": "How to fix it",
+        })
+
+    return issues
+```
+
+### 4. Update Agents for Provenance Tagging
+
+Ensure agents cite the Cost Watchlist when giving cost advice:
+
+```markdown
+# In agent system prompts
+
+When discussing costs for [Service]:
+1. Reference COST_SENSITIVE_RESOURCES.md
+2. Tag warnings with `[STATIC:COST_WATCHLIST]` or `[LIVE-VALIDATED:COST_WATCHLIST]`
+3. Cite specific TRAP-XXX-NNN identifiers
+```
+
+### 5. Update Documentation
+
+- Add service to README.md "Supported Cloudflare Services" list
+- Update CLAUDE.md "Cloudflare Service Coverage" table
+- Add to CHANGELOG.md under appropriate version
+
+### Example: Adding Hyperdrive Guardrails
+
+```markdown
+# COST_SENSITIVE_RESOURCES.md
+
+## Hyperdrive (Connection Pooling)
+
+### Pricing Model (2026)
+
+| Resource | Cost | Free Tier |
+|----------|------|-----------|
+| Connections | $0.01 per 1M queries | 5M/month |
+
+### Cost Traps
+
+#### TRAP-HD-001: Connection per Request (HIGH)
+
+**Pattern**: Creating new connection for each request instead of pooling.
+
+\`\`\`typescript
+// EXPENSIVE: New connection per request
+app.get('/data', async (c) => {
+  const client = new Client(c.env.DATABASE_URL);
+  await client.connect();
+  // ...
+});
+
+// OPTIMIZED: Use Hyperdrive connection
+app.get('/data', async (c) => {
+  // Hyperdrive manages connection pooling
+  const result = await c.env.HYPERDRIVE.query('SELECT ...');
+});
+\`\`\`
+
+**Detection**:
+- `[STATIC]`: Check for `new Client()` in request handlers
+- `[LIVE-VALIDATED]`: Connection count in observability
+
+**Guardian Rule**: `BUDGET007`
+```
 
 ## Questions?
 

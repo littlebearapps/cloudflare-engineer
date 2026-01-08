@@ -1,0 +1,446 @@
+# Cost-Sensitive Resources Watchlist
+
+This document details pricing traps and cost-sensitive patterns for Cloudflare services. Referenced by the `guardian` skill and all agents for proactive cost warnings.
+
+**Provenance**: All warnings derived from this document should be tagged with `[STATIC:COST_WATCHLIST]` unless verified against live observability data (`[LIVE-VALIDATED]`).
+
+---
+
+## D1 (SQLite Database)
+
+### Pricing Model (2026)
+
+| Operation | Cost | Free Tier |
+|-----------|------|-----------|
+| Reads | $0.25 per billion rows | 5B rows/month |
+| Writes | $1.00 per million rows | 5M rows/month |
+| Storage | $0.75 per GB/month | 5GB |
+
+### Cost Traps
+
+#### TRAP-D1-001: Per-Row Inserts (CRITICAL)
+
+**Pattern**: Loop-based INSERT statements instead of batched operations.
+
+```typescript
+// EXPENSIVE: Each insert = 1 write operation
+for (const item of items) {
+  await db.prepare('INSERT INTO items (name) VALUES (?)').bind(item.name).run();
+}
+// Cost: 10,000 items = 10,000 write operations = $0.01
+// At scale: 1M items/day = $1/day = $30/month
+
+// OPTIMIZED: Batched insert = 1 write operation per batch
+const batch = items.map(item =>
+  db.prepare('INSERT INTO items (name) VALUES (?)').bind(item.name)
+);
+await db.batch(batch); // Max 1000 statements per batch
+// Cost: 10,000 items = 10 batches = $0.00001
+// Savings: 99.9%
+```
+
+**Detection**:
+- `[STATIC]`: Grep for `for.*\.run\(` or `forEach.*\.run\(` patterns
+- `[LIVE-VALIDATED]`: Query observability for write operation counts vs row counts
+
+**Guardian Rule**: `BUDGET003`
+
+---
+
+#### TRAP-D1-002: Missing Indexes (HIGH)
+
+**Pattern**: Queries on unindexed columns cause full table scans.
+
+```sql
+-- EXPENSIVE: Full table scan
+SELECT * FROM users WHERE email = 'user@example.com';
+-- If users table has 1M rows, this reads 1M rows
+
+-- OPTIMIZED: Index-based lookup
+CREATE INDEX idx_users_email ON users(email);
+SELECT * FROM users WHERE email = 'user@example.com';
+-- Now reads ~1-10 rows
+```
+
+**Detection**:
+- `[STATIC]`: Check migrations for CREATE INDEX on WHERE/ORDER BY columns
+- `[LIVE-VALIDATED]`: Run `EXPLAIN QUERY PLAN` - look for `SCAN TABLE` vs `SEARCH USING INDEX`
+
+**Guardian Rule**: `PERF002`
+
+---
+
+#### TRAP-D1-003: SELECT * on Large Tables (MEDIUM)
+
+**Pattern**: Fetching all columns when only specific fields needed.
+
+```typescript
+// EXPENSIVE: Fetches all columns
+const users = await db.prepare('SELECT * FROM users').all();
+
+// OPTIMIZED: Fetch only needed columns
+const users = await db.prepare('SELECT id, name FROM users').all();
+```
+
+**Detection**:
+- `[STATIC]`: Grep for `SELECT \*` patterns
+- `[LIVE-VALIDATED]`: Check average response size in observability
+
+---
+
+## R2 (Object Storage)
+
+### Pricing Model (2026)
+
+| Operation | Cost | Free Tier |
+|-----------|------|-----------|
+| Class A (writes) | $4.50 per million | 1M/month |
+| Class B (reads) | $0.36 per million | 10M/month |
+| Storage | $0.015 per GB/month | 10GB |
+| Egress | FREE | Unlimited |
+
+### Cost Traps
+
+#### TRAP-R2-001: Frequent Small Writes (HIGH)
+
+**Pattern**: Writing small objects frequently instead of buffering.
+
+```typescript
+// EXPENSIVE: Each log line = 1 Class A operation
+for (const log of logs) {
+  await bucket.put(`logs/${Date.now()}.json`, JSON.stringify(log));
+}
+// Cost: 1M logs/day = $4.50/day = $135/month
+
+// OPTIMIZED: Buffer and batch write
+const buffer = logs.map(l => JSON.stringify(l)).join('\n');
+await bucket.put(`logs/${Date.now()}-batch.jsonl`, buffer);
+// Cost: 1 batch/minute = 1440 ops/day = $0.006/day
+// Savings: 99.99%
+```
+
+**Detection**:
+- `[STATIC]`: Look for `.put()` inside loops or high-frequency handlers
+- `[LIVE-VALIDATED]`: Check Class A operation count vs object count
+
+**Guardian Rule**: `BUDGET002`
+
+---
+
+#### TRAP-R2-002: Direct Client Uploads Missing Presigned URLs (MEDIUM)
+
+**Pattern**: Proxying uploads through Worker instead of direct-to-R2.
+
+```typescript
+// EXPENSIVE: Worker proxies entire file
+app.post('/upload', async (c) => {
+  const file = await c.req.blob();
+  await c.env.BUCKET.put(filename, file);
+});
+// Cost: Worker CPU time + potential timeouts on large files
+
+// OPTIMIZED: Presigned URL for direct upload
+app.post('/upload/url', async (c) => {
+  const url = await c.env.BUCKET.createMultipartUpload(filename);
+  return c.json({ uploadUrl: url });
+});
+// Client uploads directly to R2, Worker only generates URL
+```
+
+**Detection**:
+- `[STATIC]`: Check for `await c.req.blob()` or `await request.arrayBuffer()` patterns
+- `[LIVE-VALIDATED]`: Check CPU time for upload endpoints
+
+---
+
+## Durable Objects
+
+### Pricing Model (2026)
+
+| Resource | Cost | Free Tier |
+|----------|------|-----------|
+| Requests | $0.15 per million | 1M/month |
+| Duration | $12.50 per million GB-seconds | None |
+| Storage | $0.20 per GB/month | 1GB |
+
+### Cost Traps
+
+#### TRAP-DO-001: Overusing Durable Objects (HIGH)
+
+**Pattern**: Using Durable Objects for simple key-value storage.
+
+```typescript
+// EXPENSIVE: Durable Object for simple counter
+export class CounterDO {
+  async fetch(request: Request) {
+    const count = await this.state.storage.get('count') || 0;
+    await this.state.storage.put('count', count + 1);
+    return new Response(String(count + 1));
+  }
+}
+// Cost: $0.15/M requests + duration charges + storage
+
+// OPTIMIZED: Use KV or D1 for simple storage
+await env.KV.put('counter', String(count + 1));
+// Cost: $5/M writes (cheaper for non-coordinated access)
+```
+
+**When to use Durable Objects**:
+- Real-time coordination (chat, collaboration)
+- Strong consistency requirements
+- WebSocket management
+- Rate limiting with atomic counters
+- Distributed locks
+
+**Detection**:
+- `[STATIC]`: Check if DO is used for simple CRUD without coordination needs
+- `[LIVE-VALIDATED]`: Compare request patterns to storage operations
+
+**Guardian Rule**: `BUDGET001`
+
+---
+
+#### TRAP-DO-002: Not Using Hibernation (MEDIUM)
+
+**Pattern**: Keeping Durable Objects active when idle.
+
+```typescript
+// EXPENSIVE: Object stays active
+export class ChatRoom {
+  async fetch(request: Request) {
+    // Handle request
+    return new Response('OK');
+  }
+}
+
+// OPTIMIZED: Use hibernation for WebSocket connections
+export class ChatRoom {
+  async webSocketMessage(ws: WebSocket, message: string) {
+    // Handle message - object hibernates between messages
+  }
+}
+```
+
+**Detection**:
+- `[STATIC]`: Check for WebSocket handlers vs hibernation API usage
+
+---
+
+## KV (Key-Value Store)
+
+### Pricing Model (2026)
+
+| Operation | Cost | Free Tier |
+|-----------|------|-----------|
+| Reads | $0.50 per million | 100K/day |
+| Writes | $5.00 per million | 1K/day |
+| Storage | $0.50 per GB/month | 1GB |
+
+### Cost Traps
+
+#### TRAP-KV-001: Write-Heavy Patterns (HIGH)
+
+**Pattern**: Using KV for write-heavy workloads.
+
+```typescript
+// EXPENSIVE: Frequent KV writes
+app.post('/events', async (c) => {
+  await c.env.KV.put(`event:${Date.now()}`, JSON.stringify(event));
+});
+// Cost: 1M events = $5
+
+// OPTIMIZED: Use D1 or R2 for write-heavy
+await c.env.DB.prepare('INSERT INTO events ...').run();
+// Cost: 1M events = $1 (D1 writes)
+// Or use Analytics Engine (essentially free)
+```
+
+**Detection**:
+- `[STATIC]`: Count `.put()` calls in request handlers
+- `[LIVE-VALIDATED]`: Check write operation frequency
+
+**Guardian Rule**: `BUDGET005`
+
+---
+
+## Queues
+
+### Pricing Model (2026)
+
+| Operation | Cost | Free Tier |
+|-----------|------|-----------|
+| Messages | $0.40 per million | 1M/month |
+
+### Cost Traps
+
+#### TRAP-QUEUE-001: High Retry Counts (HIGH)
+
+**Pattern**: Setting high max_retries multiplies message costs.
+
+```jsonc
+// EXPENSIVE: 5 retries = up to 6x message cost
+{
+  "queues": {
+    "consumers": [{
+      "queue": "my-queue",
+      "max_retries": 5  // Each retry = another message charge
+    }]
+  }
+}
+
+// OPTIMIZED: Low retries + DLQ for inspection
+{
+  "queues": {
+    "consumers": [{
+      "queue": "my-queue",
+      "max_retries": 1,
+      "dead_letter_queue": "my-queue-dlq"
+    }]
+  }
+}
+```
+
+**Detection**:
+- `[STATIC]`: Check wrangler config for `max_retries > 2`
+- `[LIVE-VALIDATED]`: Compare message count to delivery attempts
+
+**Guardian Rule**: `COST001`
+
+---
+
+## Workers AI
+
+### Pricing Model (2026)
+
+| Model Size | Cost | Notes |
+|------------|------|-------|
+| Small (<3B) | ~$0.01/1K neurons | Efficient for simple tasks |
+| Medium (3-8B) | ~$0.05/1K neurons | Good balance |
+| Large (>8B) | ~$0.68/M tokens | Expensive at scale |
+
+### Cost Traps
+
+#### TRAP-AI-001: Large Models for Simple Tasks (HIGH)
+
+**Pattern**: Using Llama 70B for tasks a smaller model handles.
+
+```typescript
+// EXPENSIVE: Large model for classification
+const result = await env.AI.run('@cf/meta/llama-3-70b-instruct', {
+  prompt: 'Is this spam? ' + message
+});
+
+// OPTIMIZED: Small model or fine-tuned classifier
+const result = await env.AI.run('@cf/huggingface/distilbert-sst-2-int8', {
+  text: message
+});
+// Or use embeddings + cosine similarity for classification
+```
+
+**Detection**:
+- `[STATIC]`: Check model names in code for >8B models
+- `[LIVE-VALIDATED]`: Check AI Gateway logs for model usage
+
+**Guardian Rule**: `BUDGET004`
+
+---
+
+#### TRAP-AI-002: No Prompt Caching (MEDIUM)
+
+**Pattern**: Identical prompts not cached via AI Gateway.
+
+```typescript
+// EXPENSIVE: Same prompt, full inference each time
+const result = await env.AI.run(model, { prompt: systemPrompt + userInput });
+
+// OPTIMIZED: Use AI Gateway with caching
+// Configure in AI Gateway dashboard:
+// - Enable caching for identical requests
+// - Set appropriate TTL
+```
+
+**Detection**:
+- `[STATIC]`: Check for AI Gateway configuration
+- `[LIVE-VALIDATED]`: Check cache hit rate in AI Gateway logs
+
+**Guardian Rule**: `COST003`
+
+---
+
+## Vectorize
+
+### Pricing Model (2026)
+
+| Resource | Cost | Limit |
+|----------|------|-------|
+| Queries | $0.01 per million | N/A |
+| Stored Vectors | $0.05 per 100M dimension-vectors | 5M vectors/index |
+
+### Cost Traps
+
+#### TRAP-VEC-001: Approaching Vector Limits (INFO)
+
+**Pattern**: Not planning for vector index limits.
+
+**Detection**:
+- `[STATIC]`: Check expected vector count in design docs
+- `[LIVE-VALIDATED]`: Query current vector count
+
+**Guardian Rule**: `BUDGET006`
+
+---
+
+## Provenance Tagging Reference
+
+When citing this document in warnings:
+
+| Tag | Usage |
+|-----|-------|
+| `[STATIC:COST_WATCHLIST]` | Warning based on code pattern matching |
+| `[LIVE-VALIDATED:COST_WATCHLIST]` | Warning confirmed by observability data |
+| `[REFUTED:COST_WATCHLIST]` | Pattern exists but not hitting thresholds |
+
+### Example Warning Format
+
+```
+[STATIC:COST_WATCHLIST] TRAP-D1-001 detected in src/handlers/import.ts:45
+Per-row INSERT in loop may cause high D1 write costs.
+Estimated impact: 10,000 items × $0.001 = $10/batch
+Recommendation: Use db.batch() for bulk inserts.
+See: COST_SENSITIVE_RESOURCES.md#trap-d1-001-per-row-inserts-critical
+```
+
+---
+
+## Adding New Cost Traps
+
+When adding new Cloudflare services or discovering new cost patterns:
+
+1. Add entry under appropriate service section
+2. Include:
+   - Trap ID (TRAP-{SERVICE}-{NUMBER})
+   - Severity (CRITICAL/HIGH/MEDIUM/INFO)
+   - Code examples (expensive vs optimized)
+   - Detection methods ([STATIC] and [LIVE-VALIDATED])
+   - Associated Guardian rule ID
+3. Update guardian skill with new BUDGET/COST rule
+4. Add detection logic to pre-deploy hook if applicable
+5. Update agents to reference new trap
+
+---
+
+## Quick Reference Card
+
+| Service | Top Cost Trap | Guardian Rule | Detection |
+|---------|---------------|---------------|-----------|
+| D1 | Per-row inserts | BUDGET003 | `for.*\.run\(` pattern |
+| R2 | Frequent small writes | BUDGET002 | `.put()` in loops |
+| DO | Overuse for simple KV | BUDGET001 | DO without coordination |
+| KV | Write-heavy patterns | BUDGET005 | High `.put()` frequency |
+| Queues | High retries | COST001 | `max_retries > 2` |
+| AI | Large models | BUDGET004 | Model name contains `70b` |
+| Vectorize | Approaching limits | BUDGET006 | Vector count monitoring |
+
+---
+
+*Last updated: 2026-01-08 (v1.2.0)*

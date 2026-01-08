@@ -248,6 +248,38 @@ For `--validate` mode, configure these Cloudflare MCP servers:
 - Cloudflare account with Workers enabled
 - (Optional) Cloudflare MCP servers for `--validate` mode
 
+## Safety & Costs
+
+This plugin includes built-in guardrails to prevent unexpected Cloudflare bills. See the **[Cost-Sensitive Resources Watchlist](COST_SENSITIVE_RESOURCES.md)** for detailed documentation of pricing traps and how to avoid them.
+
+### Cost Trap Quick Reference
+
+| Service | Top Cost Trap | Guardian Rule | Detection |
+|---------|---------------|---------------|-----------|
+| D1 | Per-row inserts instead of batch | BUDGET003 | `for.*\.run\(` pattern |
+| R2 | Frequent small writes | BUDGET002 | `.put()` in loops |
+| Durable Objects | Overuse for simple KV | BUDGET001 | DO without coordination need |
+| KV | Write-heavy patterns | BUDGET005 | High `.put()` frequency |
+| Queues | High retry counts | COST001 | `max_retries > 2` |
+| Workers AI | Large models for simple tasks | BUDGET004 | Model name contains `70b` |
+
+### Provenance Tagging for Cost Warnings
+
+All cost warnings include provenance tags for transparency:
+
+| Tag | Meaning |
+|-----|---------|
+| `[STATIC:COST_WATCHLIST]` | Pattern detected via code analysis |
+| `[LIVE-VALIDATED:COST_WATCHLIST]` | Confirmed by observability data |
+| `[REFUTED:COST_WATCHLIST]` | Pattern exists but not hitting thresholds |
+
+### Budget Whisperer
+
+When Claude suggests code changes involving D1, R2, or Durable Objects, the guardian skill automatically:
+1. Searches for cost-optimized patterns (`.batch()`, `CREATE INDEX`, buffering)
+2. Warns if expensive patterns are detected
+3. Cites specific traps from the Cost Watchlist
+
 ## Directory Structure
 
 ```
@@ -288,6 +320,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Links
 
 - [Changelog](CHANGELOG.md)
+- [Cost-Sensitive Resources Watchlist](COST_SENSITIVE_RESOURCES.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security Policy](SECURITY.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
