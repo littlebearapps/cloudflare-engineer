@@ -1,7 +1,7 @@
 {
   "name": "cloudflare-engineer",
-  "version": "1.1.0",
-  "description": "Senior Cloudflare Systems Engineer capabilities - architecture design, cost optimization, security auditing, and implementation patterns for Workers, D1, R2, KV, Queues, and the full Cloudflare stack. Now with live validation via MCP tools and actionable patterns.",
+  "version": "1.2.0",
+  "description": "Platform Architect capabilities for Cloudflare - architecture design with Edge-Native Constraints, cost optimization with Vibecoder Proactive Safeguards, security auditing with Zero Trust, SSL for SaaS, and media streaming patterns. Now with Budget & Privacy Enforcement that warns before you ask.",
   "author": {
     "name": "Little Bear Apps",
     "email": "hello@littlebearapps.com"
@@ -19,6 +19,12 @@
     "devops",
     "infrastructure",
     "security",
-    "cost-optimization"
+    "cost-optimization",
+    "zero-trust",
+    "access",
+    "custom-hostnames",
+    "saas",
+    "stream",
+    "images"
   ]
 }

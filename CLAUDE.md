@@ -2,7 +2,7 @@
 
 ## Overview
 
-Claude Code plugin providing Senior Cloudflare Systems Engineer capabilities.
+Claude Code plugin providing **Platform Architect** capabilities for Cloudflare (upgraded from Senior Developer in v1.2.0).
 
 **GitHub**: https://github.com/littlebearapps/cloudflare-engineer
 **Local**: `~/.claude/local-marketplace/cloudflare-engineer/`
@@ -22,18 +22,25 @@ Claude Code plugin providing Senior Cloudflare Systems Engineer capabilities.
 cloudflare-engineer/
 ├── .claude-plugin/plugin.json  # Manifest (name, description, version)
 ├── skills/
-│   ├── */SKILL.md              # Auto-discovered skills
+│   ├── architect/SKILL.md      # Architecture + Edge-Native Constraints
+│   ├── guardian/SKILL.md       # Security + Budget + Privacy Enforcement
+│   ├── implement/SKILL.md      # Code scaffolding
+│   ├── optimize-costs/SKILL.md # Cost analysis
+│   ├── scale/SKILL.md          # Scaling patterns
 │   ├── probes/SKILL.md         # MCP audit probe queries
-│   └── patterns/               # Architecture patterns
-│       ├── SKILL.md
-│       ├── service-bindings.md
-│       ├── d1-batching.md
-│       └── circuit-breaker.md
+│   ├── patterns/               # Architecture patterns
+│   │   ├── SKILL.md
+│   │   ├── service-bindings.md
+│   │   ├── d1-batching.md
+│   │   └── circuit-breaker.md
+│   ├── zero-trust/SKILL.md     # Access policy auditing (NEW)
+│   ├── custom-hostnames/SKILL.md # SSL for SaaS (NEW)
+│   └── media-streaming/SKILL.md  # Stream & Images (NEW)
 ├── agents/*.md                 # Auto-discovered agents (with MCP tools)
-├── commands/*.md               # Slash commands (--validate support)
+├── commands/*.md               # Slash commands (--validate, --discover)
 ├── hooks/
 │   ├── hooks.json              # Hook configuration
-│   └── pre-deploy-check.py     # Python validation script
+│   └── pre-deploy-check.py     # Python validation + Performance Budgeter
 └── README.md                   # User documentation
 ```
 
@@ -88,26 +95,34 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 
 | Service | Skills | Hook Checks |
 |---------|--------|-------------|
-| Workers | architect, implement | PERF001 (smart_placement) |
-| D1 | implement, scale | - |
-| R2 | implement | - |
-| KV | implement | - |
-| Queues | architect, scale | RES001 (DLQ), COST001 (retries) |
-| Vectorize | implement | - |
-| AI Gateway | optimize-costs | - |
+| Workers | architect, implement | PERF001, PERF005, PERF006 |
+| D1 | implement, scale | BUDGET003 (batching) |
+| R2 | implement, media-streaming | BUDGET002 (writes) |
+| KV | implement | BUDGET005 (writes) |
+| Queues | architect, scale | RES001, RES002, COST001 |
+| Vectorize | implement | BUDGET006 (scaling) |
+| AI Gateway | optimize-costs | BUDGET004, PRIV003 |
 | Workflows | architect | - |
-| Durable Objects | scale | - |
+| Durable Objects | scale, guardian | BUDGET001 |
+| Access | zero-trust | ZT001-ZT008 |
+| Custom Hostnames | custom-hostnames | - |
+| Stream | media-streaming | - |
+| Images | media-streaming | - |
 
 ## Key Files to Know
 
 | File | Purpose |
 |------|---------|
 | `skills/optimize-costs/SKILL.md` | Pricing formulas, cost patterns |
-| `skills/guardian/SKILL.md` | Security checklist, OWASP patterns |
-| `skills/architect/SKILL.md` | Mermaid templates, wrangler.toml patterns |
+| `skills/guardian/SKILL.md` | Security + Budget + Privacy checklist |
+| `skills/architect/SKILL.md` | Mermaid templates, Edge-Native Constraints |
 | `skills/probes/SKILL.md` | MCP tool queries for live validation |
 | `skills/patterns/SKILL.md` | Architecture pattern catalog |
-| `hooks/pre-deploy-check.py` | Validation rules (SEC*, RES*, COST*, PERF*) |
+| `skills/zero-trust/SKILL.md` | Access policy auditing |
+| `skills/custom-hostnames/SKILL.md` | SSL for SaaS patterns |
+| `skills/media-streaming/SKILL.md` | Stream & Images patterns |
+| `hooks/pre-deploy-check.py` | Validation rules + Performance Budgeter |
+| `commands/cf-audit.md` | Audit + Resource Discovery command |
 | `commands/cf-pattern.md` | Pattern application command |
 
 ## Validation Rule IDs
@@ -115,11 +130,16 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 | ID | Severity | Check |
 |----|----------|-------|
 | SEC001 | CRITICAL | Plaintext secrets in config |
-| SEC002 | HIGH | Missing vars encryption |
 | RES001 | HIGH | Queue without DLQ |
+| RES002 | MEDIUM | Missing max_concurrency |
 | COST001 | MEDIUM | max_retries > 2 |
-| PERF001 | MEDIUM | smart_placement disabled |
+| PERF001 | LOW | smart_placement disabled |
 | PERF004 | LOW | observability.logs disabled |
+| PERF005 | CRITICAL/HIGH | Bundle size exceeds tier limits |
+| PERF006 | HIGH | Incompatible native packages |
+| BUDGET001-006 | INFO-HIGH | Budget enforcement triggers |
+| PRIV001-005 | MEDIUM-CRITICAL | Privacy enforcement triggers |
+| ZT001-008 | HIGH-CRITICAL | Zero Trust gaps |
 
 ## Testing Changes
 
@@ -138,5 +158,6 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 
 ## Version History
 
+- v1.2.0 - Platform Architect upgrade: Vibecoder Proactive Safeguards, Resource Discovery, Edge-Native Constraints, Performance Budgeter, zero-trust, custom-hostnames, media-streaming skills (10 skills, 3 agents, 4 commands, 1 hook)
 - v1.1.0 - Live validation (`--validate`), provenance tagging, probes skill, patterns skill (7 skills, 3 agents, 4 commands, 1 hook)
 - v1.0.0 - Initial release (5 skills, 3 agents, 3 commands, 1 hook)
