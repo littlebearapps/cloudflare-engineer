@@ -1,38 +1,45 @@
 # Cloudflare Engineer Plugin
 
-A Claude Code plugin that provides Senior Cloudflare Systems Engineer capabilities for designing, implementing, optimizing, and securing Cloudflare Workers applications.
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-v2.0.12+-purple.svg)](https://claude.com/claude-code)
 
-## Installation
+A Claude Code plugin that provides **Senior Cloudflare Systems Engineer** capabilities for designing, implementing, optimizing, and securing Cloudflare Workers applications.
+
+## Quick Install
 
 ```bash
-# Add local marketplace (once)
-claude plugin marketplace add ~/.claude/local-marketplace
+# From GitHub (recommended)
+/plugin marketplace add littlebearapps/cloudflare-engineer
+/plugin install cloudflare-engineer@littlebearapps
 
-# Install plugin
-claude plugin install cloudflare-engineer@local-plugins
+# Or install directly
+/plugin install github:littlebearapps/cloudflare-engineer
 ```
 
-**Source**: `~/.claude/local-marketplace/cloudflare-engineer/`
-**Cache**: `~/.claude/plugins/cache/local-plugins/cloudflare-engineer/`
+## Features at a Glance
+
+| Category | What You Get |
+|----------|--------------|
+| **7 Skills** | Cost optimization, security auditing, architecture design, implementation patterns |
+| **4 Commands** | `/cf-costs`, `/cf-audit`, `/cf-design`, `/cf-pattern` |
+| **3 Agents** | Deep analysis with MCP tool integration |
+| **1 Hook** | Pre-deploy validation catches issues before they hit production |
 
 ## What's New in v1.1.0
 
 ### Live Validation Mode (`--validate`)
 
-Commands and agents now support **live validation** against Cloudflare MCP tools:
-
-- **Architecture verification**: Run `EXPLAIN QUERY PLAN` to verify D1 index usage
-- **Cost validation**: Compare static estimates against actual observability data
-- **Security verification**: Check real request patterns against static findings
+Commands now support **live validation** against Cloudflare MCP tools:
 
 ```bash
-/cf-costs --validate    # Compare estimates with live observability
-/cf-audit --validate    # Verify findings against production data
+/cf-costs --validate    # Compare estimates with live observability data
+/cf-audit --validate    # Verify findings against production metrics
 ```
 
 ### Provenance Tagging
 
-All findings are now tagged with their data source:
+All findings are tagged with their data source:
 
 | Tag | Meaning |
 |-----|---------|
@@ -41,9 +48,9 @@ All findings are now tagged with their data source:
 | `[LIVE-REFUTED]` | Code smell not observed in production |
 | `[INCOMPLETE]` | MCP tools unavailable for verification |
 
-### Pattern Catalog
+### Architecture Pattern Catalog
 
-New actionable patterns with before/after code examples:
+Apply battle-tested patterns with code examples:
 
 | Pattern | Problem | Solution |
 |---------|---------|----------|
@@ -51,187 +58,132 @@ New actionable patterns with before/after code examples:
 | `d1-batching` | High D1 write costs | Batch INSERT operations |
 | `circuit-breaker` | External API cascading failures | Fail-fast with fallback |
 
-Apply patterns with: `/cf-pattern service-bindings`
+```bash
+/cf-pattern service-bindings
+/cf-pattern d1-batching --analyze-only
+```
 
-### Audit Probes
-
-Pre-built diagnostic queries for live validation:
-
-- **D1**: Schema discovery, index inventory, EXPLAIN QUERY PLAN
-- **Observability**: Error rates, latency percentiles
-- **AI Gateway**: Cost by model, cache hit rates
-- **Queues**: DLQ depth, retry rate analysis
-
-## Features
-
-### Skills (7)
-
-| Skill | Trigger | Purpose |
-|-------|---------|---------|
-| `optimize-costs` | Cost questions, billing concerns | Monthly bill prediction, optimization recommendations |
-| `guardian` | Security audit, resilience review | Security posture audit, failure mode analysis |
-| `architect` | System design, architecture | Mermaid diagrams, wrangler.toml generation |
-| `implement` | Scaffolding, code generation | Hono/Drizzle templates, TypeScript patterns |
-| `scale` | Scaling, performance | Sharding, caching, read-replication strategies |
-| `probes` | Audit queries | Pre-built MCP tool queries for live validation |
-| `patterns` | Architecture patterns | Remediation patterns with code examples |
-
-### Commands (4)
+## Commands
 
 | Command | Purpose |
 |---------|---------|
-| `/cf-costs [--validate]` | Cost report with optional live data validation |
-| `/cf-audit [--validate]` | Security and configuration audit |
+| `/cf-costs [--validate]` | Cost report with monthly projections |
+| `/cf-audit [--validate] [--category=<cat>]` | Security/performance/cost audit |
 | `/cf-design` | Interactive architecture design wizard |
-| `/cf-pattern <name>` | Apply architecture pattern to current project |
+| `/cf-pattern <name> [--analyze-only]` | Apply architecture pattern |
 
-### Agents (3)
+## Skills (Auto-Invoked)
 
-| Agent | Purpose | MCP Tools |
-|-------|---------|-----------|
-| `cost-analyzer` | Deep cost analysis with live validation | observability, ai-gateway, bindings |
-| `security-auditor` | Comprehensive security audit | bindings, observability |
-| `architecture-reviewer` | Pattern analysis with EXPLAIN QUERY PLAN | bindings, observability |
+Skills activate automatically based on your questions:
 
-### Hooks (1)
+```
+"How much will this worker cost?"     -> optimize-costs
+"Is my worker secure?"                -> guardian
+"Design a queue-based pipeline"       -> architect
+"Scaffold a Hono API with D1"         -> implement
+"How do I scale to 1M requests/day?"  -> scale
+```
 
-| Hook | Event | Purpose |
-|------|-------|---------|
-| `pre-deploy-check` | PreToolUse (Bash) | Validates wrangler config before `wrangler deploy` |
+## Pre-Deploy Validation Hook
 
-## Pre-Deploy Hook
+Automatically validates `wrangler.toml` before deployment:
 
-The pre-deploy hook automatically validates your wrangler.toml/wrangler.jsonc before deployment:
+| Check | Severity | Description |
+|-------|----------|-------------|
+| SEC001 | CRITICAL | Plaintext secrets in config |
+| SEC002 | HIGH | Missing vars encryption |
+| RES001 | HIGH | Queues without dead letter queues |
+| COST001 | MEDIUM | High retry counts |
+| PERF001 | MEDIUM | Smart placement disabled |
+| PERF004 | LOW | Observability not configured |
 
-**Checks performed:**
-- `SEC001` - Plaintext secrets (CRITICAL - blocks deploy)
-- `SEC002` - Missing vars encryption
-- `RES001` - Queues without dead letter queues (HIGH)
-- `COST001` - High retry counts on queues (MEDIUM)
-- `PERF001` - Smart placement disabled (MEDIUM)
-- `PERF004` - Missing observability config (LOW)
+**CRITICAL issues block deployment.** Other severities are warnings.
 
-**Exit codes:**
-- `0` - Deploy allowed (no issues or warnings only)
-- `2` - Deploy blocked (CRITICAL issues found)
+## Supported Cloudflare Services
 
-## MCP Tool Requirements
+- Workers (standard & Durable Objects)
+- D1 (SQLite database)
+- R2 (object storage)
+- KV (key-value store)
+- Queues (with DLQ support)
+- Vectorize (vector database)
+- AI Gateway (LLM routing)
+- Workflows (durable execution)
+- Hyperdrive (connection pooling)
+- Analytics Engine
 
-For `--validate` mode, these Cloudflare MCP servers should be configured:
+## MCP Tool Integration
+
+For `--validate` mode, configure these Cloudflare MCP servers:
 
 | MCP Server | Used For |
 |------------|----------|
 | `cloudflare-observability` | Worker metrics, error rates, latency |
 | `cloudflare-ai-gateway` | AI costs, cache hit rates |
-| `cloudflare-bindings` | D1 EXPLAIN QUERY PLAN, resource lists |
+| `cloudflare-bindings` | D1 queries, resource inventory |
 
-**Graceful Degradation**: If MCP tools are unavailable, commands will:
-1. Note which tools are missing
-2. Continue with static analysis
-3. Tag affected findings as `[INCOMPLETE]`
-
-## Supported Cloudflare Services
-
-- Workers (standard and Durable Objects)
-- D1 (SQLite database)
-- R2 (object storage)
-- KV (key-value store)
-- Queues (message queues with DLQ)
-- Vectorize (vector database)
-- AI Gateway (LLM routing)
-- Workflows (durable execution)
-- Hyperdrive (database connection pooling)
-- Analytics Engine (metrics)
+**Graceful Degradation**: Commands continue with static analysis if MCP tools are unavailable, tagging affected findings as `[INCOMPLETE]`.
 
 ## Usage Examples
 
 ```bash
-# Get cost optimization recommendations
-/cf-costs
+# Cost analysis
+/cf-costs                              # Static cost estimate
+/cf-costs --validate                   # With live data validation
 
-# Cost report with live validation
-/cf-costs --validate
-
-# Run security audit
-/cf-audit
-
-# Security audit with live verification
+# Security audit
+/cf-audit                              # Full audit
 /cf-audit --validate --category=security
 
-# Design new architecture interactively
-/cf-design
+# Architecture design
+/cf-design                             # Interactive wizard
 
-# Apply architecture pattern
-/cf-pattern d1-batching
-
-# Analyze pattern applicability
-/cf-pattern service-bindings --analyze-only
+# Apply patterns
+/cf-pattern circuit-breaker            # Apply pattern
+/cf-pattern service-bindings --analyze-only  # Analysis only
 ```
 
-Skills are auto-invoked based on context:
-```
-"How much will this worker cost per month?"  -> optimize-costs
-"Is my worker secure?"                        -> guardian
-"Design a queue-based pipeline"               -> architect
-"Scaffold a Hono API with D1"                 -> implement
-"How do I scale to 1M requests/day?"          -> scale
-```
+## Requirements
+
+- Claude Code v2.0.12+
+- Python 3.8+ (for pre-deploy hook)
+- Cloudflare account with Workers enabled
+- (Optional) Cloudflare MCP servers for `--validate` mode
 
 ## Directory Structure
 
 ```
 cloudflare-engineer/
-├── .claude-plugin/
-│   └── plugin.json           # Plugin manifest
-├── skills/
-│   ├── optimize-costs/SKILL.md
-│   ├── guardian/SKILL.md
-│   ├── architect/SKILL.md
-│   ├── implement/SKILL.md
-│   ├── scale/SKILL.md
-│   ├── probes/SKILL.md       # NEW: Audit probe definitions
-│   └── patterns/             # NEW: Architecture patterns
-│       ├── SKILL.md
-│       ├── service-bindings.md
-│       ├── d1-batching.md
-│       └── circuit-breaker.md
-├── agents/
-│   ├── cost-analyzer.md
-│   ├── security-auditor.md
-│   └── architecture-reviewer.md
-├── commands/
-│   ├── cf-costs.md
-│   ├── cf-audit.md
-│   ├── cf-design.md
-│   └── cf-pattern.md         # NEW: Pattern application
-├── hooks/
-│   ├── hooks.json
-│   └── pre-deploy-check.py
-├── README.md
-└── CLAUDE.md
+├── .claude-plugin/plugin.json    # Plugin manifest
+├── skills/                       # 7 auto-invoked skills
+├── agents/                       # 3 deep-analysis agents
+├── commands/                     # 4 slash commands
+├── hooks/                        # Pre-deploy validation
+├── LICENSE                       # MIT
+├── CONTRIBUTING.md               # Contribution guide
+├── SECURITY.md                   # Security policy
+└── CHANGELOG.md                  # Version history
 ```
 
-## Requirements
+## Contributing
 
-- Claude Code with plugin support
-- Python 3.x (for pre-deploy hook)
-- Cloudflare account with Workers enabled
-- (Optional) Cloudflare MCP servers for `--validate` mode
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
-## Version
+## Security
 
-v1.1.0 - Live validation, provenance tagging, and pattern catalog
+See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
-### Changelog
+## License
 
-**v1.1.0**
-- Added `--validate` mode for live data validation via MCP tools
-- Added provenance tagging (`[STATIC]`, `[LIVE-VALIDATED]`, `[LIVE-REFUTED]`, `[INCOMPLETE]`)
-- Added probes skill with pre-built audit queries
-- Added patterns skill with 3 priority patterns (service-bindings, d1-batching, circuit-breaker)
-- Added `/cf-pattern` command for pattern application
-- Enhanced all agents with explicit MCP tool orchestration
-- Added graceful degradation when MCP tools unavailable
+MIT License - see [LICENSE](LICENSE) for details.
 
-**v1.0.0**
-- Initial release with 5 skills, 3 agents, 3 commands, 1 hook
+## Links
+
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security Policy](SECURITY.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+
+---
+
+Made with care by [Little Bear Apps](https://littlebearapps.com)

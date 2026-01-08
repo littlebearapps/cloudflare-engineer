@@ -5,5 +5,20 @@
   "author": {
     "name": "Little Bear Apps",
     "email": "hello@littlebearapps.com"
-  }
+  },
+  "homepage": "https://github.com/littlebearapps/cloudflare-engineer",
+  "repository": "https://github.com/littlebearapps/cloudflare-engineer",
+  "license": "MIT",
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "d1",
+    "r2",
+    "kv",
+    "queues",
+    "devops",
+    "infrastructure",
+    "security",
+    "cost-optimization"
+  ]
 }
