@@ -4,8 +4,17 @@
 
 Claude Code plugin providing Senior Cloudflare Systems Engineer capabilities.
 
-**Source**: `~/.claude/local-marketplace/cloudflare-engineer/`
-**Marketplace**: `local-plugins`
+**GitHub**: https://github.com/littlebearapps/cloudflare-engineer
+**Local**: `~/.claude/local-marketplace/cloudflare-engineer/`
+**Status**: Public, PR pending at [anthropics/claude-plugins-official#170](https://github.com/anthropics/claude-plugins-official/pull/170)
+
+## CI/CD
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `validate.yml` | push/PR to main | Validates plugin.json, Python syntax, required files, markdown |
+| `release.yml` | version tags (v*) | Creates GitHub releases with install instructions |
+| `claude.yml` | PRs, @claude mentions | Claude Max PR review via OAuth |
 
 ## Plugin Structure
 
@@ -115,9 +124,17 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 ## Testing Changes
 
 1. Edit source in `~/.claude/local-marketplace/cloudflare-engineer/`
-2. Re-install: `claude plugin update cloudflare-engineer@local-plugins`
-3. Start new Claude Code session to reload
-4. Test with real project (e.g., Scout at `~/claude-code-tools/lba/scout/workers/`)
+2. Run local validation: `python3 -m py_compile hooks/pre-deploy-check.py`
+3. Re-install: `claude plugin update cloudflare-engineer@local-plugins`
+4. Start new Claude Code session to reload
+5. Test with real project (e.g., Scout at `~/claude-code-tools/lba/scout/workers/`)
+
+## Contributing
+
+1. Fork https://github.com/littlebearapps/cloudflare-engineer
+2. Create feature branch
+3. Push and open PR - Claude will auto-review via `@claude`
+4. CI runs validate.yml on all PRs
 
 ## Version History
 
