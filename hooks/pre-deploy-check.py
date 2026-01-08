@@ -305,7 +305,7 @@ def check_bundle_size(working_dir: str, config: dict) -> list[dict]:
                     "id": "PERF005",
                     "severity": "HIGH",
                     "message": f"Estimated bundle size ~{estimated_size_kb:.0f}KB exceeds Free tier 1MB limit",
-                    "fix": 'Either reduce bundle or add "usage_model": "standard" for 10MB limit',
+                    "fix": 'Either reduce bundle or add "usage_model": "unbound" for 10MB limit',
                 })
             else:
                 issues.append({
