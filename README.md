@@ -17,6 +17,9 @@ A Claude Code plugin that provides **Senior Cloudflare Systems Engineer** capabi
 /plugin install github:littlebearapps/cloudflare-engineer
 ```
 
+> [!TIP]
+> This plugin works fully without any additional setup. For enhanced capabilities like live validation and real-time cost analysis, configure the optional [Cloudflare MCP servers](#mcp-tool-integration).
+
 ## Features at a Glance
 
 | Category | What You Get |
