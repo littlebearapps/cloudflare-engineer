@@ -1,10 +1,10 @@
 # Cloudflare Engineer Plugin
 
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-v2.0.12+-purple.svg)](https://claude.com/claude-code)
 
-A Claude Code plugin that provides **Senior Cloudflare Systems Engineer** capabilities for designing, implementing, optimizing, and securing Cloudflare Workers applications.
+A Claude Code plugin that provides **Platform Architect** capabilities for designing, implementing, optimizing, and securing Cloudflare Workers applications. Now with **Vibecoder Proactive Safeguards** that warn about cost and privacy impacts before you ask.
 
 ## Quick Install
 
@@ -24,10 +24,23 @@ A Claude Code plugin that provides **Senior Cloudflare Systems Engineer** capabi
 
 | Category | What You Get |
 |----------|--------------|
-| **7 Skills** | Cost optimization, security auditing, architecture design, implementation patterns |
-| **4 Commands** | `/cf-costs`, `/cf-audit`, `/cf-design`, `/cf-pattern` |
+| **10 Skills** | Cost optimization, security auditing, architecture design, Zero Trust, Custom Hostnames, Media/Streaming, and more |
+| **4 Commands** | `/cf-costs`, `/cf-audit` (with Resource Discovery), `/cf-design`, `/cf-pattern` |
 | **3 Agents** | Deep analysis with MCP tool integration |
-| **1 Hook** | Pre-deploy validation catches issues before they hit production |
+| **1 Hook** | Pre-deploy validation with Performance Budgeter |
+
+## Vibecoder Proactive Safeguards (NEW in v1.2.0)
+
+This plugin **proactively warns** you about cost and privacy impacts **before you ask**:
+
+| Trigger | Warning |
+|---------|---------|
+| Durable Objects usage | "DO charges ~$0.15/GB-month storage. Consider KV for simple key-value." |
+| R2 Class A ops >1M/mo | "R2 writes cost $4.50/M. Buffer writes or use presigned URLs." |
+| D1 Writes >10M/mo | "D1 writes cost $1/M. Batch to 1,000 rows." |
+| Workers AI >8B models | "Large models cost $0.68/M tokens. Use 8B or smaller for bulk." |
+| PII in logs | "Detected potential PII logging. Use structured logging with redaction." |
+| User data in KV keys | "KV keys with user IDs may leak via dashboard. Hash or encrypt." |
 
 ## Supported Cloudflare Services
 
@@ -41,6 +54,49 @@ A Claude Code plugin that provides **Senior Cloudflare Systems Engineer** capabi
 - Workflows (durable execution)
 - Hyperdrive (connection pooling)
 - Analytics Engine
+- **Access (Zero Trust)** - NEW
+- **Custom Hostnames (SSL for SaaS)** - NEW
+- **Stream (video delivery)** - NEW
+- **Images (transformations)** - NEW
+
+## What's New in v1.2.0
+
+### Vibecoder Proactive Safeguards
+
+The guardian skill now **proactively warns** about Budget and Privacy impacts:
+- Budget enforcement: Warns about expensive patterns (Durable Objects, R2 writes, D1 writes, large AI models)
+- Privacy enforcement: Detects PII in logs, user data in KV keys, AI prompts without redaction
+
+### Resource Discovery Mode
+
+`/cf-audit` now includes **Resource Discovery** by default:
+- Finds unused KV namespaces, R2 buckets, D1 databases
+- Identifies dangling references and orphaned Workers
+- Use `--discover` for explicit discovery-only mode
+
+### Edge-Native Constraints
+
+The architect skill now validates **Workers runtime compatibility**:
+- Flags incompatible Node.js libraries (fs, net, http)
+- Suggests Cloudflare alternatives (R2, fetch, Hono)
+- Includes compatibility flag requirements
+
+### Performance Budgeter
+
+Pre-deploy hook now checks **bundle size limits**:
+- Free tier: 1MB warning
+- Standard tier: 10MB limit
+- Detects heavy dependencies (aws-sdk, sharp, moment)
+
+### New Skills
+
+| Skill | Purpose |
+|-------|---------|
+| `zero-trust` | Audit Access policies, detect unprotected staging/dev environments |
+| `custom-hostnames` | Manage SSL for SaaS, vanity domains, hostname lifecycle |
+| `media-streaming` | Cloudflare Stream (signed URLs) and Images (transformations) |
+
+---
 
 ## What's New in v1.1.0
 
@@ -93,12 +149,30 @@ Apply battle-tested patterns with code examples:
 Skills activate automatically based on your questions:
 
 ```
-"How much will this worker cost?"     -> optimize-costs
-"Is my worker secure?"                -> guardian
-"Design a queue-based pipeline"       -> architect
-"Scaffold a Hono API with D1"         -> implement
-"How do I scale to 1M requests/day?"  -> scale
+"How much will this worker cost?"           -> optimize-costs
+"Is my worker secure?"                      -> guardian (with Budget & Privacy)
+"Design a queue-based pipeline"             -> architect (with Edge-Native checks)
+"Scaffold a Hono API with D1"               -> implement
+"How do I scale to 1M requests/day?"        -> scale
+"Is my staging environment protected?"      -> zero-trust (NEW)
+"How do I add custom domains for SaaS?"     -> custom-hostnames (NEW)
+"How do I serve videos with signed URLs?"   -> media-streaming (NEW)
 ```
+
+### All 10 Skills
+
+| Skill | Purpose |
+|-------|---------|
+| `architect` | Architecture design with Edge-Native Constraints |
+| `guardian` | Security + Budget + Privacy auditing |
+| `implement` | Code scaffolding (Hono, D1, Drizzle) |
+| `optimize-costs` | Cost analysis and optimization |
+| `scale` | Scaling strategies and patterns |
+| `probes` | MCP audit queries |
+| `patterns` | Architecture pattern catalog |
+| `zero-trust` | Access policy auditing |
+| `custom-hostnames` | SSL for SaaS management |
+| `media-streaming` | Stream and Images patterns |
 
 ## Pre-Deploy Validation Hook
 
@@ -107,13 +181,22 @@ Automatically validates `wrangler.toml` before deployment:
 | Check | Severity | Description |
 |-------|----------|-------------|
 | SEC001 | CRITICAL | Plaintext secrets in config |
-| SEC002 | HIGH | Missing vars encryption |
 | RES001 | HIGH | Queues without dead letter queues |
-| COST001 | MEDIUM | High retry counts |
-| PERF001 | MEDIUM | Smart placement disabled |
+| RES002 | MEDIUM | Missing max_concurrency limit |
+| COST001 | MEDIUM | High retry counts ($0.40/M per retry) |
+| PERF001 | LOW | Smart placement disabled |
 | PERF004 | LOW | Observability not configured |
+| PERF005 | CRITICAL/HIGH | Bundle size exceeds tier limits (NEW) |
+| PERF006 | HIGH | Incompatible native packages (NEW) |
 
 **CRITICAL issues block deployment.** Other severities are warnings.
+
+### Performance Budgeter (NEW)
+
+The hook now estimates bundle size and warns about tier limits:
+- **Free tier**: 1MB compressed - `[HIGH]` if exceeded
+- **Standard tier**: 10MB compressed - `[CRITICAL]` if exceeded
+- Detects heavy dependencies: `moment`, `lodash`, `aws-sdk`, `sharp`
 
 ## MCP Tool Integration
 
@@ -170,7 +253,17 @@ For `--validate` mode, configure these Cloudflare MCP servers:
 ```
 cloudflare-engineer/
 ├── .claude-plugin/plugin.json    # Plugin manifest
-├── skills/                       # 7 auto-invoked skills
+├── skills/                       # 10 auto-invoked skills
+│   ├── architect/                # Architecture + Edge-Native
+│   ├── guardian/                 # Security + Budget + Privacy
+│   ├── implement/                # Code scaffolding
+│   ├── optimize-costs/           # Cost analysis
+│   ├── scale/                    # Scaling patterns
+│   ├── probes/                   # MCP queries
+│   ├── patterns/                 # Pattern catalog
+│   ├── zero-trust/               # Access policies (NEW)
+│   ├── custom-hostnames/         # SSL for SaaS (NEW)
+│   └── media-streaming/          # Stream & Images (NEW)
 ├── agents/                       # 3 deep-analysis agents
 ├── commands/                     # 4 slash commands
 ├── hooks/                        # Pre-deploy validation

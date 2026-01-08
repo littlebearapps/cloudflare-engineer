@@ -3,8 +3,12 @@
 Pre-Deploy Check Hook for Cloudflare Engineer Plugin
 
 This hook intercepts `wrangler deploy` commands and validates the wrangler
-configuration for security, resilience, and cost issues before allowing
-deployment.
+configuration for security, resilience, cost, and PERFORMANCE issues before
+allowing deployment.
+
+Includes Performance Budgeter for bundle size limits:
+- Free tier: 1MB compressed
+- Standard tier: 10MB compressed
 
 Exit codes:
 - 0: Allow deployment
@@ -16,6 +20,7 @@ import os
 import re
 import sys
 from pathlib import Path
+import subprocess
 
 
 def debug_log(message: str) -> None:
@@ -198,38 +203,6 @@ def check_secrets_in_vars(config: dict) -> list[dict]:
     return issues
 
 
-def check_queue_dlq(config: dict) -> list[dict]:
-    """Check for queues without dead letter queues."""
-    issues = []
-    queues = config.get("queues", {})
-    consumers = queues.get("consumers", [])
-
-    for i, consumer in enumerate(consumers):
-        if isinstance(consumer, dict):
-            queue_name = consumer.get("queue", f"consumer[{i}]")
-            # Skip DLQ check for queues that ARE dead letter queues
-            is_dlq = queue_name.endswith("-dlq") or "dead_letter" in queue_name.lower()
-            if "dead_letter_queue" not in consumer and not is_dlq:
-                issues.append({
-                    "id": "RES001",
-                    "severity": "HIGH",
-                    "message": f"Queue '{queue_name}' missing dead_letter_queue",
-                    "fix": f'Add: "dead_letter_queue": "{queue_name}-dlq"',
-                })
-
-            # Check for high retries
-            max_retries = consumer.get("max_retries", 3)
-            if max_retries > 2:
-                issues.append({
-                    "id": "COST001",
-                    "severity": "MEDIUM",
-                    "message": f"Queue '{queue_name}' has max_retries={max_retries} (each retry costs)",
-                    "fix": 'Set max_retries to 1 if consumer is idempotent',
-                })
-
-    return issues
-
-
 def check_observability(config: dict) -> list[dict]:
     """Check for missing observability config."""
     issues = []
@@ -264,13 +237,179 @@ def check_smart_placement(config: dict) -> list[dict]:
     return issues
 
 
-def run_audit(config: dict) -> list[dict]:
+def check_bundle_size(working_dir: str, config: dict) -> list[dict]:
+    """Check estimated bundle size against tier limits (Performance Budgeter)."""
+    issues = []
+
+    # Try to find the main entry file
+    main_entry = config.get("main", "src/index.ts")
+    entry_path = Path(working_dir) / main_entry
+
+    # Check if dist/src directory exists for size estimation
+    src_dir = Path(working_dir) / "src"
+    dist_dir = Path(working_dir) / "dist"
+
+    estimated_size_kb = 0
+
+    # Try to estimate bundle size from source
+    for check_dir in [dist_dir, src_dir]:
+        if check_dir.exists():
+            try:
+                # Sum up all .js, .ts, .mjs files
+                total_size = 0
+                for ext in ["*.js", "*.ts", "*.mjs", "*.json"]:
+                    for f in check_dir.rglob(ext):
+                        if "node_modules" not in str(f):
+                            total_size += f.stat().st_size
+                estimated_size_kb = total_size / 1024
+                break
+            except Exception:
+                pass
+
+    # Check node_modules for heavy dependencies
+    node_modules = Path(working_dir) / "node_modules"
+    heavy_deps = []
+    if node_modules.exists():
+        # Known heavy packages that inflate bundle size
+        heavy_packages = {
+            "moment": 300,  # ~300KB
+            "lodash": 500,  # ~500KB if not tree-shaken
+            "aws-sdk": 2000,  # ~2MB
+            "@aws-sdk": 1000,  # ~1MB per service
+            "sharp": 5000,  # Native - won't work anyway
+        }
+        for pkg, size in heavy_packages.items():
+            pkg_path = node_modules / pkg
+            if pkg_path.exists():
+                heavy_deps.append((pkg, size))
+                estimated_size_kb += size
+
+    # Bundle size limits
+    FREE_LIMIT_KB = 1024  # 1MB
+    STANDARD_LIMIT_KB = 10240  # 10MB
+
+    # Determine tier from config (default to free for safety)
+    usage_model = config.get("usage_model", "bundled")  # "bundled" = free, "unbound" = paid
+
+    if estimated_size_kb > 0:
+        if estimated_size_kb > STANDARD_LIMIT_KB:
+            issues.append({
+                "id": "PERF005",
+                "severity": "CRITICAL",
+                "message": f"Estimated bundle size ~{estimated_size_kb:.0f}KB exceeds 10MB limit",
+                "fix": "Reduce bundle size: remove unused deps, use tree-shaking, split into service bindings",
+            })
+        elif estimated_size_kb > FREE_LIMIT_KB:
+            if usage_model == "bundled":
+                issues.append({
+                    "id": "PERF005",
+                    "severity": "HIGH",
+                    "message": f"Estimated bundle size ~{estimated_size_kb:.0f}KB exceeds Free tier 1MB limit",
+                    "fix": 'Either reduce bundle or add "usage_model": "standard" for 10MB limit',
+                })
+            else:
+                issues.append({
+                    "id": "PERF005",
+                    "severity": "LOW",
+                    "message": f"Bundle size ~{estimated_size_kb:.0f}KB (within Standard tier limit)",
+                    "fix": "Consider optimization for faster cold starts",
+                })
+        elif estimated_size_kb > FREE_LIMIT_KB * 0.8:  # 80% warning
+            issues.append({
+                "id": "PERF005",
+                "severity": "LOW",
+                "message": f"Bundle size ~{estimated_size_kb:.0f}KB approaching 1MB Free tier limit",
+                "fix": "Monitor bundle growth; consider code splitting",
+            })
+
+    # Warn about specific heavy dependencies
+    for pkg, size in heavy_deps:
+        if pkg == "sharp":
+            issues.append({
+                "id": "PERF006",
+                "severity": "HIGH",
+                "message": f"Package '{pkg}' uses native bindings - won't work on Workers",
+                "fix": "Use Cloudflare Images API instead",
+            })
+        elif pkg in ["aws-sdk", "@aws-sdk"]:
+            issues.append({
+                "id": "PERF006",
+                "severity": "MEDIUM",
+                "message": f"Package '{pkg}' is ~{size}KB - very heavy for Workers",
+                "fix": "Use R2 S3-compatible API or specific lightweight clients",
+            })
+
+    return issues
+
+
+def check_queue_dlq_comprehensive(config: dict) -> list[dict]:
+    """Enhanced DLQ check with more context."""
+    issues = []
+    queues = config.get("queues", {})
+    consumers = queues.get("consumers", [])
+    producers = queues.get("producers", [])
+
+    # Build list of all queue names for cross-reference
+    all_queues = set()
+    for consumer in consumers:
+        if isinstance(consumer, dict):
+            all_queues.add(consumer.get("queue", ""))
+            dlq = consumer.get("dead_letter_queue", "")
+            if dlq:
+                all_queues.add(dlq)
+    for producer in producers:
+        if isinstance(producer, dict):
+            all_queues.add(producer.get("queue", ""))
+
+    for i, consumer in enumerate(consumers):
+        if isinstance(consumer, dict):
+            queue_name = consumer.get("queue", f"consumer[{i}]")
+            # Skip DLQ check for queues that ARE dead letter queues
+            is_dlq = queue_name.endswith("-dlq") or "dead_letter" in queue_name.lower()
+
+            if "dead_letter_queue" not in consumer and not is_dlq:
+                dlq_suggestion = f"{queue_name}-dlq"
+                issues.append({
+                    "id": "RES001",
+                    "severity": "HIGH",
+                    "message": f"Queue '{queue_name}' missing dead_letter_queue",
+                    "fix": f'Add: "dead_letter_queue": "{dlq_suggestion}"',
+                })
+
+            # Check for high retries (cost multiplier)
+            max_retries = consumer.get("max_retries", 3)
+            if max_retries > 2:
+                issues.append({
+                    "id": "COST001",
+                    "severity": "MEDIUM",
+                    "message": f"Queue '{queue_name}' has max_retries={max_retries} (each retry costs $0.40/M)",
+                    "fix": 'Set max_retries to 1-2 if consumer is idempotent',
+                })
+
+            # Check for missing max_concurrency (resilience)
+            if "max_concurrency" not in consumer:
+                issues.append({
+                    "id": "RES002",
+                    "severity": "MEDIUM",
+                    "message": f"Queue '{queue_name}' has no max_concurrency limit",
+                    "fix": 'Add "max_concurrency": 10 to prevent overload',
+                })
+
+    return issues
+
+
+def run_audit(config: dict, working_dir: str = "") -> list[dict]:
     """Run all audit checks on config."""
     issues = []
     issues.extend(check_secrets_in_vars(config))
-    issues.extend(check_queue_dlq(config))
+    issues.extend(check_queue_dlq_comprehensive(config))  # Enhanced DLQ check
     issues.extend(check_observability(config))
     issues.extend(check_smart_placement(config))
+
+    # Performance Budgeter - check bundle size
+    if working_dir:
+        issues.extend(check_bundle_size(working_dir, config))
+
     return issues
 
 
@@ -342,8 +481,8 @@ def main():
         debug_log("Failed to parse config")
         sys.exit(0)  # Allow if we can't parse
 
-    # Run audit
-    issues = run_audit(config)
+    # Run audit with working directory for bundle size check
+    issues = run_audit(config, working_dir)
 
     if not issues:
         debug_log("No issues found, allowing deploy")

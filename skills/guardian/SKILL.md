@@ -1,11 +1,36 @@
 ---
 name: guardian
-description: Audit Cloudflare Worker configurations for security vulnerabilities, resilience gaps, and cost traps. Use this skill when reviewing wrangler configs, before deployments, or when investigating production issues.
+description: Proactively audit Cloudflare configurations for security vulnerabilities, resilience gaps, cost traps, AND budget/privacy risks. Use this skill when reviewing wrangler configs, before deployments, investigating issues, or when ANY architecture decision involves Durable Objects, R2, Workers AI, or high-volume operations. This skill PROACTIVELY warns about cost impacts before users ask.
 ---
 
 # Cloudflare Guardian Skill
 
-Audit wrangler configurations for security vulnerabilities, performance issues, cost traps, and resilience gaps. Acts as a senior SRE reviewing infrastructure-as-code.
+Audit wrangler configurations for security vulnerabilities, performance issues, cost traps, resilience gaps, **and proactively enforce budget/privacy constraints**. Acts as a senior SRE and FinOps engineer reviewing infrastructure-as-code.
+
+## Vibecoder Proactive Safeguards
+
+**IMPORTANT**: This skill should proactively warn users about cost and privacy impacts BEFORE they deploy or even ask about costs. When reviewing ANY architecture that includes the following, immediately surface budget/privacy alerts:
+
+### Budget Enforcement Triggers
+
+| Service/Pattern | Threshold | Proactive Warning |
+|-----------------|-----------|-------------------|
+| Durable Objects | Any usage | "DO charges ~$0.15/GB-month storage + $0.50/M requests. Consider KV for simple key-value." |
+| R2 Class A ops | >1M/month | "R2 writes cost $4.50/M. Buffer writes or use presigned URLs for client uploads." |
+| D1 Writes | >10M/month | "D1 writes cost $1/M. Detected pattern suggests >$10/mo. Batch to ≤1,000 rows." |
+| Workers AI (>8B) | Any usage | "Large models (Llama 11B+) cost $0.68/M tokens. Use 8B or smaller for bulk." |
+| Vectorize | >1M vectors | "Approaching 5M vector limit. Plan sharding strategy." |
+| KV Writes | >5M/month | "KV writes cost $5/M (10× reads). Consider D1 or R2 for write-heavy." |
+
+### Privacy Enforcement Triggers
+
+| Pattern | Severity | Proactive Warning |
+|---------|----------|-------------------|
+| PII in logs | CRITICAL | "Detected potential PII logging. Use structured logging with redaction." |
+| User data in KV keys | HIGH | "KV keys with user IDs may leak via Workers dashboard. Hash or encrypt." |
+| AI prompts with PII | HIGH | "AI Gateway logs may contain user data. Enable prompt redaction." |
+| R2 public buckets | HIGH | "R2 bucket appears public. Verify intentional or add authentication." |
+| Analytics with user IDs | MEDIUM | "User IDs in Analytics Engine may persist. Use anonymized identifiers." |
 
 ## Audit Categories
 
@@ -49,6 +74,27 @@ Audit wrangler configurations for security vulnerabilities, performance issues, 
 | RES003 | Single region | LOW | No `cf.smart_placement` for latency-sensitive |
 | RES004 | Missing retry config | MEDIUM | Queue consumer without explicit retry config |
 | RES005 | No circuit breaker | LOW | External API calls without timeout/fallback |
+
+### Budget Audit Rules (Proactive)
+
+| ID | Name | Severity | Check |
+|----|------|----------|-------|
+| BUDGET001 | Durable Objects usage | INFO | Any DO binding - proactively explain cost model |
+| BUDGET002 | R2 write-heavy pattern | MEDIUM | Frequent R2 Class A ops without buffering |
+| BUDGET003 | D1 per-row inserts | HIGH | Loop-based INSERTs instead of batch |
+| BUDGET004 | Large AI model | MEDIUM | Workers AI with >8B parameter model |
+| BUDGET005 | KV write-heavy | MEDIUM | >5M KV writes/month pattern |
+| BUDGET006 | Vectorize scaling | INFO | >1M vectors - warn about 5M limit |
+
+### Privacy Audit Rules
+
+| ID | Name | Severity | Check |
+|----|------|----------|-------|
+| PRIV001 | PII in logs | CRITICAL | console.log with user data patterns |
+| PRIV002 | User IDs in KV keys | HIGH | KV key patterns containing user/email/phone |
+| PRIV003 | AI prompts PII | HIGH | AI bindings without redaction middleware |
+| PRIV004 | R2 public access | HIGH | R2 bucket without authentication |
+| PRIV005 | Analytics PII | MEDIUM | User identifiers in Analytics Engine writes |
 
 ## Audit Workflow
 
@@ -99,6 +145,30 @@ For each resilience rule:
 3. Recommend redundancy patterns
 ```
 
+### Step 5b: Run Budget Enforcement Checks (Proactive)
+
+```
+For bindings that trigger budget warnings:
+1. Detect Durable Objects → Explain cost model proactively
+2. Detect R2 writes → Check for buffering patterns
+3. Detect D1 writes → Check for batch vs per-row
+4. Detect Workers AI → Check model size selection
+5. Detect high-volume KV → Suggest alternatives
+```
+
+**Key principle**: Surface budget impacts BEFORE the user asks about costs.
+
+### Step 5c: Run Privacy Checks
+
+```
+For privacy-sensitive patterns:
+1. Scan code for console.log with user data patterns
+2. Check KV key naming for PII patterns
+3. Verify AI prompts have redaction middleware
+4. Check R2 bucket access controls
+5. Review Analytics Engine write patterns
+```
+
 ### Step 6: Calculate Score
 
 ```
@@ -120,14 +190,21 @@ Grades:
 **Score**: XX/100 (Grade: X)
 **File**: wrangler.jsonc
 
+## Proactive Budget & Privacy Alerts
+
+> **Budget Impact Detected**: [List any BUDGET* findings with cost estimates]
+> **Privacy Concern**: [List any PRIV* findings requiring attention]
+
 ## Summary
 
-| Category | Critical | High | Medium | Low |
-|----------|----------|------|--------|-----|
-| Security | X | X | X | X |
-| Performance | X | X | X | X |
-| Cost | X | X | X | X |
-| Resilience | X | X | X | X |
+| Category | Critical | High | Medium | Low | Info |
+|----------|----------|------|--------|-----|------|
+| Security | X | X | X | X | - |
+| Performance | X | X | X | X | - |
+| Cost | X | X | X | X | - |
+| Resilience | X | X | X | X | - |
+| Budget | - | X | X | - | X |
+| Privacy | X | X | X | - | - |
 
 ## Critical Issues (Must Fix)
 

@@ -1,12 +1,14 @@
 ---
-description: "Audit wrangler config for security, performance, cost, and resilience issues [--validate for live verification]"
-argument-hint: "[wrangler-path] [--category=security|performance|cost|resilience|all] [--validate]"
+description: "Audit wrangler config with dual-mode: Resource Discovery (default) finds unused/dangling resources, --validate verifies against production metrics"
+argument-hint: "[wrangler-path] [--category=security|performance|cost|resilience|resources|all] [--validate] [--discover]"
 allowed-tools: ["Read", "Glob", "Grep", "Bash", "mcp__cloudflare-observability__*", "mcp__cloudflare-bindings__*"]
 ---
 
 # Cloudflare Configuration Audit
 
-Comprehensive audit of your wrangler configuration against security, performance, cost, and resilience best practices.
+Comprehensive audit of your wrangler configuration with **dual-mode** operation:
+- **Resource Discovery** (default): Identify unused KV namespaces, R2 buckets, dangling DNS records, orphaned D1 databases
+- **Validation** (`--validate`): Verify findings against live production metrics
 
 **Arguments:** "$ARGUMENTS"
 
@@ -14,16 +16,19 @@ Comprehensive audit of your wrangler configuration against security, performance
 
 | Mode | Description | MCP Tools |
 |------|-------------|-----------|
-| **Static** (default) | Analyze config and code only | None |
-| **Validate** (`--validate`) | Verify findings against live data | observability, bindings |
+| **Discovery** (default) | Find unused resources + static config analysis | bindings (optional) |
+| **Validate** (`--validate`) | Verify findings against live production data | observability, bindings |
+| **Discover** (`--discover`) | Resource discovery only (explicit mode) | bindings |
 
 ## Quick Start
 
 ```bash
-/cf-audit                              # Static audit, current directory
+/cf-audit                              # Resource discovery + config audit (default)
 /cf-audit workers/wrangler.jsonc       # Specific file
 /cf-audit --category=security          # Security-only audit
-/cf-audit --validate                   # Verify findings with live data
+/cf-audit --category=resources         # Resource discovery only
+/cf-audit --discover                   # Explicit resource discovery mode
+/cf-audit --validate                   # Verify findings with live production data
 /cf-audit --validate --category=perf   # Live-validated performance audit
 ```
 
@@ -33,10 +38,73 @@ Comprehensive audit of your wrangler configuration against security, performance
 
 Parse `$ARGUMENTS` for:
 - `--validate`: Enable live data validation
-- `--category=X`: Filter to specific category
+- `--discover`: Explicit resource discovery mode
+- `--category=X`: Filter to specific category (now includes `resources`)
 - `[path]`: Explicit wrangler config path
 
-### Step 1: MCP Availability Check (if --validate)
+### Step 0b: Resource Discovery Mode (Default Behavior)
+
+**NEW in v1.2.0**: By default, `/cf-audit` now performs resource discovery before config analysis.
+
+#### Resource Discovery Checks
+
+| Resource Type | Discovery Check | Provenance |
+|---------------|-----------------|------------|
+| KV Namespaces | List all → compare to wrangler bindings | `[STATIC]` or `[LIVE-VALIDATED]` |
+| R2 Buckets | List all → check for references in code | `[STATIC]` or `[LIVE-VALIDATED]` |
+| D1 Databases | List all → compare to active bindings | `[STATIC]` or `[LIVE-VALIDATED]` |
+| DNS Records | List dangling CNAME/A records | `[LIVE-VALIDATED]` only |
+| Queues | List all → check consumer bindings | `[STATIC]` or `[LIVE-VALIDATED]` |
+| Workers | List all → check for orphaned workers | `[LIVE-VALIDATED]` only |
+
+#### Resource Discovery Workflow
+
+```javascript
+// Step 1: Inventory account resources (if MCP available)
+mcp__cloudflare-bindings__kv_namespaces_list()
+mcp__cloudflare-bindings__r2_buckets_list()
+mcp__cloudflare-bindings__d1_databases_list()
+mcp__cloudflare-bindings__queues_list()
+mcp__cloudflare-bindings__workers_list()
+
+// Step 2: Parse all wrangler configs in project
+// Find all wrangler.toml/wrangler.jsonc files
+// Extract all bindings: kv_namespaces, r2_buckets, d1_databases, queues
+
+// Step 3: Compare and identify
+// - Unused: In account but not in any wrangler config
+// - Dangling: In wrangler config but not in account
+// - Orphaned: Workers with no recent requests (via observability)
+```
+
+#### Resource Discovery Output
+
+```markdown
+## Resource Discovery Results
+
+### Unused Resources (Cleanup Candidates)
+
+| Type | Name/ID | Last Activity | Action |
+|------|---------|---------------|--------|
+| KV | `old-cache-namespace` | 90+ days | Consider deletion |
+| R2 | `staging-uploads-2024` | No recent ops | Verify and delete |
+| D1 | `test-db-backup` | Never queried | Archive or delete |
+
+### Dangling References
+
+| Type | Binding | Issue | Fix |
+|------|---------|-------|-----|
+| KV | `LEGACY_CACHE` | Namespace doesn't exist | Remove binding or create namespace |
+| Queue | `OLD_QUEUE` | Queue deleted | Remove consumer config |
+
+### Orphaned Workers
+
+| Worker | Last Request | Recommendation |
+|--------|--------------|----------------|
+| `api-v1-deprecated` | 180 days ago | Delete if unused |
+```
+
+### Step 1: MCP Availability Check (if --validate or resource discovery)
 
 Before using MCP tools, verify availability:
 
@@ -214,6 +282,20 @@ Output score and findings:
 ```
 
 ## Category Details
+
+### Resources (`--category=resources`)
+
+Focus on:
+- Unused KV namespaces
+- Orphaned R2 buckets
+- Dangling D1 databases
+- Stale DNS records
+- Inactive Workers
+
+**Live Validation Adds:**
+- Last activity timestamps
+- Request volume analysis
+- Storage utilization metrics
 
 ### Security (`--category=security`)
 
