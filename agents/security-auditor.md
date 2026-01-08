@@ -242,6 +242,18 @@ grep -r "fetch.*\$\|fetch.*request" --include="*.ts"
 | Exposed endpoints | Monitor 4xx/5xx patterns |
 | Secret leakage | Search logs for patterns |
 
+## Cost-Aware Security Recommendations
+
+When security fixes have cost implications, reference `${CLAUDE_PLUGIN_ROOT}/COST_SENSITIVE_RESOURCES.md`:
+
+| Security Fix | Cost Consideration | Reference |
+|--------------|-------------------|-----------|
+| Rate limiting with KV | KV write costs | TRAP-KV-001 |
+| Audit logging to D1 | D1 write batching | TRAP-D1-001 |
+| Request validation with AI | Model costs | TRAP-AI-001 |
+
+Tag cost-related security recommendations with `[STATIC:COST_WATCHLIST]` when applicable.
+
 ## Be Thorough
 
 - Check every route handler

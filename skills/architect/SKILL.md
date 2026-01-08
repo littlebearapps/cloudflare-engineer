@@ -32,6 +32,46 @@ Design production-ready Cloudflare architectures with proper service selection, 
 - Suggest `node:` polyfills or Cloudflare alternatives
 - Verify compatibility flags in wrangler config
 
+### 5. Wrangler Health Check
+
+Before designing or deploying, verify the local wrangler installation is current.
+
+**Check Command**:
+```bash
+npx wrangler --version
+```
+
+**Version Advisory Table** (as of 2026-01):
+
+| Installed Version | Status | Recommendation |
+|-------------------|--------|----------------|
+| 3.100+ | Current | Good to go |
+| 3.80-3.99 | Acceptable | Update when convenient |
+| 3.50-3.79 | Outdated | Update recommended: `npm install -g wrangler@latest` |
+| <3.50 | Critical | Update required - missing important features |
+
+**Key Version Features**:
+- 3.100+: Enhanced D1 Time Travel, improved `wrangler dev`
+- 3.80+: Vectorize GA support, better error messages
+- 3.60+: Queues improvements, better observability
+- 3.50+: nodejs_compat_v2 flag support
+
+**Wrangler Health Check Output**:
+```markdown
+## Wrangler Health Check
+
+**Installed**: wrangler 3.95.0
+**Status**: ✅ Acceptable (current is 3.102.0)
+**Recommendation**: Update when convenient for latest features
+
+To update: `npm install -g wrangler@latest`
+```
+
+**When to Run**:
+- Before `/cf-design` architecture sessions
+- Before first deployment to new environment
+- When encountering unexpected wrangler errors
+
 ## Service Selection Matrix
 
 ### Storage Selection

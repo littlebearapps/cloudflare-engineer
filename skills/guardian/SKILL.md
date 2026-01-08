@@ -7,6 +7,47 @@ description: Proactively audit Cloudflare configurations for security vulnerabil
 
 Audit wrangler configurations for security vulnerabilities, performance issues, cost traps, resilience gaps, **and proactively enforce budget/privacy constraints**. Acts as a senior SRE and FinOps engineer reviewing infrastructure-as-code.
 
+## Cost Watchlist Reference
+
+**IMPORTANT**: For detailed cost trap documentation, reference `${CLAUDE_PLUGIN_ROOT}/COST_SENSITIVE_RESOURCES.md`.
+
+When issuing cost warnings, use provenance tags:
+- `[STATIC:COST_WATCHLIST]` - Pattern detected via code analysis
+- `[LIVE-VALIDATED:COST_WATCHLIST]` - Confirmed by observability data
+- `[REFUTED:COST_WATCHLIST]` - Pattern exists but not hitting thresholds
+
+## Budget Whisperer Behavior
+
+**CRITICAL**: When Claude suggests ANY code change involving the following, the guardian skill MUST trigger proactive checks:
+
+### D1 Write Operations
+If suggesting code that includes `.run()`, `.first()`, or database writes:
+1. **Search for `.batch()`** - If missing, warn about per-row insert costs
+2. **Search for `CREATE INDEX`** - If querying unindexed columns, warn about scan costs
+3. **Cite**: `TRAP-D1-001` or `TRAP-D1-002` from COST_SENSITIVE_RESOURCES.md
+
+```
+Budget Whisperer Check:
+- Detected: D1 write operation in proposed code
+- Searched for: db.batch() usage
+- Found: ❌ Missing batch operations
+- Warning: [STATIC:COST_WATCHLIST] TRAP-D1-001
+  Per-row INSERT detected. At 10K rows, this costs $0.01 vs $0.00001 batched.
+  Recommendation: Wrap in db.batch() with max 1000 statements per batch.
+```
+
+### R2 Write Operations
+If suggesting code that includes `.put()`:
+1. **Check loop context** - Is `.put()` inside a loop or frequently called handler?
+2. **Search for buffering** - Any aggregation before write?
+3. **Cite**: `TRAP-R2-001` from COST_SENSITIVE_RESOURCES.md
+
+### Durable Objects Usage
+If suggesting DO architecture:
+1. **Check use case** - Is coordination/locking actually needed?
+2. **Suggest alternatives** - KV for simple storage, D1 for relational
+3. **Cite**: `TRAP-DO-001` from COST_SENSITIVE_RESOURCES.md
+
 ## Vibecoder Proactive Safeguards
 
 **IMPORTANT**: This skill should proactively warn users about cost and privacy impacts BEFORE they deploy or even ask about costs. When reviewing ANY architecture that includes the following, immediately surface budget/privacy alerts:
