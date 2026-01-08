@@ -29,6 +29,19 @@ A Claude Code plugin that provides **Senior Cloudflare Systems Engineer** capabi
 | **3 Agents** | Deep analysis with MCP tool integration |
 | **1 Hook** | Pre-deploy validation catches issues before they hit production |
 
+## Supported Cloudflare Services
+
+- Workers (standard & Durable Objects)
+- D1 (SQLite database)
+- R2 (object storage)
+- KV (key-value store)
+- Queues (with DLQ support)
+- Vectorize (vector database)
+- AI Gateway (LLM routing)
+- Workflows (durable execution)
+- Hyperdrive (connection pooling)
+- Analytics Engine
+
 ## What's New in v1.1.0
 
 ### Live Validation Mode (`--validate`)
@@ -102,19 +115,6 @@ Automatically validates `wrangler.toml` before deployment:
 
 **CRITICAL issues block deployment.** Other severities are warnings.
 
-## Supported Cloudflare Services
-
-- Workers (standard & Durable Objects)
-- D1 (SQLite database)
-- R2 (object storage)
-- KV (key-value store)
-- Queues (with DLQ support)
-- Vectorize (vector database)
-- AI Gateway (LLM routing)
-- Workflows (durable execution)
-- Hyperdrive (connection pooling)
-- Analytics Engine
-
 ## MCP Tool Integration
 
 For `--validate` mode, configure these Cloudflare MCP servers:
@@ -124,6 +124,18 @@ For `--validate` mode, configure these Cloudflare MCP servers:
 | `cloudflare-observability` | Worker metrics, error rates, latency |
 | `cloudflare-ai-gateway` | AI costs, cache hit rates |
 | `cloudflare-bindings` | D1 queries, resource inventory |
+
+### What Works Without MCP
+
+| Feature | Without MCP | With MCP |
+|---------|-------------|----------|
+| `/cf-costs` | Static estimates from config | + Live usage validation |
+| `/cf-audit` | Config & code analysis | + Production metrics |
+| `/cf-design` | Full functionality | Same |
+| `/cf-pattern` | Full functionality | Same |
+| Pre-deploy hook | Full functionality | Same |
+| All 7 skills | Full functionality | Same |
+| All 3 agents | Static analysis | + Real-time data |
 
 **Graceful Degradation**: Commands continue with static analysis if MCP tools are unavailable, tagging affected findings as `[INCOMPLETE]`.
 
