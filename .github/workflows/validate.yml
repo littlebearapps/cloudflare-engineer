@@ -1,0 +1,56 @@
+name: Validate Plugin
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate plugin.json structure
+        run: |
+          echo "Checking plugin.json required fields..."
+          jq -e '.name and .version and .description and .author.name and .license' .claude-plugin/plugin.json
+          echo "✓ All required fields present"
+
+      - name: Validate version format
+        run: |
+          VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
+          if [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "✓ Version format valid: $VERSION"
+          else
+            echo "✗ Invalid version format: $VERSION (expected semver x.y.z)"
+            exit 1
+          fi
+
+      - name: Validate Python hook syntax
+        run: |
+          echo "Checking Python syntax..."
+          python3 -m py_compile hooks/pre-deploy-check.py
+          echo "✓ Python syntax valid"
+
+      - name: Check required files exist
+        run: |
+          echo "Checking required files..."
+          FILES=("README.md" "LICENSE" "CONTRIBUTING.md" "SECURITY.md" "CHANGELOG.md")
+          for file in "${FILES[@]}"; do
+            if [[ -f "$file" ]]; then
+              echo "✓ $file exists"
+            else
+              echo "✗ $file missing"
+              exit 1
+            fi
+          done
+
+      - name: Lint Markdown
+        uses: DavidAnson/markdownlint-cli2-action@v16
+        with:
+          globs: |
+            README.md
+            CONTRIBUTING.md
+            CHANGELOG.md

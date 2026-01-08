@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          PLUGIN_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
+          if [[ "$TAG_VERSION" != "$PLUGIN_VERSION" ]]; then
+            echo "Tag version ($TAG_VERSION) doesn't match plugin.json version ($PLUGIN_VERSION)"
+            exit 1
+          fi
+          echo "✓ Version matches: $TAG_VERSION"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          generate_release_notes: true
+          body: |
+            ## Installation
+
+            ```bash
+            /plugin install github:littlebearapps/cloudflare-engineer
+            ```
+
+            Or via marketplace:
+            ```bash
+            /plugin marketplace add littlebearapps/cloudflare-engineer
+            /plugin install cloudflare-engineer@littlebearapps
+            ```
+
+            See [CHANGELOG.md](https://github.com/littlebearapps/cloudflare-engineer/blob/main/CHANGELOG.md) for details.
