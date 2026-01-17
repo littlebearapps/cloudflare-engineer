@@ -1,10 +1,10 @@
 # Cloudflare Engineer Plugin
 
-[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-v2.0.12+-purple.svg)](https://claude.com/claude-code)
 
-A Claude Code plugin that provides **Platform Architect** capabilities for designing, implementing, optimizing, and securing Cloudflare Workers applications. Now with **Vibecoder Proactive Safeguards** that warn about cost and privacy impacts before you ask.
+A Claude Code plugin that provides **Platform Architect** capabilities for designing, implementing, optimizing, and securing Cloudflare Workers applications. Now with **Loop Protection** to prevent denial-of-wallet attacks from infinite loops and runaway processes.
 
 ## Quick Install
 
@@ -24,12 +24,27 @@ A Claude Code plugin that provides **Platform Architect** capabilities for desig
 
 | Category | What You Get |
 |----------|--------------|
-| **10 Skills** | Cost optimization, security auditing, architecture design, Zero Trust, Custom Hostnames, Media/Streaming, and more |
+| **11 Skills** | Cost optimization, security auditing, architecture design, **Loop Protection**, Zero Trust, Custom Hostnames, Media/Streaming, and more |
 | **4 Commands** | `/cf-costs`, `/cf-audit` (with Resource Discovery), `/cf-design`, `/cf-pattern` |
 | **3 Agents** | Deep analysis with MCP tool integration |
-| **1 Hook** | Pre-deploy validation with Performance Budgeter |
+| **1 Hook** | Pre-deploy validation with Performance Budgeter and **Loop Detection** |
 
-## Vibecoder Proactive Safeguards (NEW in v1.2.0)
+## Loop Protection (NEW in v1.3.0)
+
+Infinite loops in serverless aren't just frozen tabs—they're **billing multipliers**. This plugin provides comprehensive protection:
+
+| Protection | What It Does |
+|------------|--------------|
+| **Recursion Guards** | Detects Worker self-fetch patterns, scaffolds X-Recursion-Depth middleware |
+| **CPU Time Caps** | Enforces `limits.cpu_ms` to kill runaway loops before they bill |
+| **Queue Safety** | Idempotency patterns + DLQ enforcement to break retry storms |
+| **DO Hibernation** | Alarm-based timers instead of `setInterval` to stop duration billing |
+| **N+1 Detection** | Flags D1 queries and R2 writes inside loops |
+| **Cost Simulation** | Estimates potential cost impact of detected loop patterns |
+
+See the new `loop-breaker` skill for complete middleware templates and patterns.
+
+## Vibecoder Proactive Safeguards
 
 This plugin **proactively warns** you about cost and privacy impacts **before you ask**:
 
@@ -58,6 +73,56 @@ This plugin **proactively warns** you about cost and privacy impacts **before yo
 - **Custom Hostnames (SSL for SaaS)** - NEW
 - **Stream (video delivery)** - NEW
 - **Images (transformations)** - NEW
+
+## What's New in v1.3.0
+
+### Loop Protection (Billing Safety)
+
+New `loop-breaker` skill and comprehensive loop detection:
+
+- **Recursion Depth Middleware**: X-Recursion-Depth header tracking with HTTP 508 responses
+- **Service Binding Guards**: Context-passing for RPC recursion protection
+- **Queue Idempotency**: KV-based deduplication to prevent retry storms
+- **DO Hibernation Patterns**: Alarm-based timing instead of setInterval
+- **D1 QueryBatcher**: Prevents N+1 query cost explosion
+
+### Enhanced Pre-Deploy Hook
+
+The hook now includes **Loop-Sensitive Resource Audit**:
+
+| Check | Severity | Detection |
+|-------|----------|-----------|
+| LOOP001 | MEDIUM | Missing `limits.cpu_ms` config |
+| LOOP002 | CRITICAL | D1 query inside loop (N+1) |
+| LOOP003 | HIGH | R2 write inside loop |
+| LOOP004 | MEDIUM | `setInterval` in Durable Object |
+| LOOP005 | CRITICAL | Worker self-fetch recursion |
+| LOOP006 | HIGH | Queue without DLQ |
+| LOOP007 | CRITICAL | Unbounded `while(true)` loop |
+| LOOP008 | MEDIUM | High queue retry count |
+
+### Cost Simulation
+
+Pre-deploy hook now estimates potential cost impact:
+
+```
+💰 COST SIMULATION
+----------------------------------------
+   - D1 writes in loop in src/import.ts: If loop runs 1000× on 1000 requests: ~$1.00/day
+   - R2 writes in loop in src/upload.ts: If loop runs 1000× on 1000 requests: ~$4.50/day
+   Recommendation: Review loop patterns and add batching/buffering
+```
+
+### Upgraded Skills
+
+| Skill | New in v1.3.0 |
+|-------|---------------|
+| `architect` | Billing Safety Limits section, CPU caps, fan-out protection |
+| `guardian` | Loop-Sensitive Resource Audit (LOOP001-LOOP008) |
+| `implement` | Queue Consumer with Idempotency, DLQ patterns, Circuit Breaker |
+| `loop-breaker` | **NEW** - Complete recursion and loop protection patterns |
+
+---
 
 ## What's New in v1.2.0
 
@@ -150,22 +215,25 @@ Skills activate automatically based on your questions:
 
 ```
 "How much will this worker cost?"           -> optimize-costs
-"Is my worker secure?"                      -> guardian (with Budget & Privacy)
-"Design a queue-based pipeline"             -> architect (with Edge-Native checks)
-"Scaffold a Hono API with D1"               -> implement
+"Is my worker secure?"                      -> guardian (with Budget & Privacy & Loop Audit)
+"Design a queue-based pipeline"             -> architect (with Billing Safety Limits)
+"Scaffold a Hono API with D1"               -> implement (with Queue Safety)
 "How do I scale to 1M requests/day?"        -> scale
-"Is my staging environment protected?"      -> zero-trust (NEW)
-"How do I add custom domains for SaaS?"     -> custom-hostnames (NEW)
-"How do I serve videos with signed URLs?"   -> media-streaming (NEW)
+"Prevent infinite loops in my worker"       -> loop-breaker (NEW)
+"Add recursion protection to webhooks"      -> loop-breaker (NEW)
+"Is my staging environment protected?"      -> zero-trust
+"How do I add custom domains for SaaS?"     -> custom-hostnames
+"How do I serve videos with signed URLs?"   -> media-streaming
 ```
 
-### All 10 Skills
+### All 11 Skills
 
 | Skill | Purpose |
 |-------|---------|
-| `architect` | Architecture design with Edge-Native Constraints |
-| `guardian` | Security + Budget + Privacy auditing |
-| `implement` | Code scaffolding (Hono, D1, Drizzle) |
+| `architect` | Architecture design with Edge-Native Constraints + Billing Safety |
+| `guardian` | Security + Budget + Privacy + Loop Auditing |
+| `implement` | Code scaffolding (Hono, D1, Drizzle) + Queue Safety |
+| `loop-breaker` | **NEW** Recursion guards, idempotency, DO hibernation |
 | `optimize-costs` | Cost analysis and optimization |
 | `scale` | Scaling strategies and patterns |
 | `probes` | MCP audit queries |
@@ -186,17 +254,36 @@ Automatically validates `wrangler.toml` before deployment:
 | COST001 | MEDIUM | High retry counts ($0.40/M per retry) |
 | PERF001 | LOW | Smart placement disabled |
 | PERF004 | LOW | Observability not configured |
-| PERF005 | CRITICAL/HIGH | Bundle size exceeds tier limits (NEW) |
-| PERF006 | HIGH | Incompatible native packages (NEW) |
+| PERF005 | CRITICAL/HIGH | Bundle size exceeds tier limits |
+| PERF006 | HIGH | Incompatible native packages |
+| LOOP001 | MEDIUM | Missing `cpu_ms` limit (NEW) |
+| LOOP002 | CRITICAL | D1 query in loop - N+1 (NEW) |
+| LOOP003 | HIGH | R2 write in loop (NEW) |
+| LOOP004 | MEDIUM | `setInterval` in DO (NEW) |
+| LOOP005 | CRITICAL | Worker self-fetch recursion (NEW) |
+| LOOP006 | HIGH | Queue without DLQ (NEW) |
+| LOOP007 | CRITICAL | Unbounded `while(true)` (NEW) |
+| LOOP008 | MEDIUM | High queue retry count (NEW) |
 
-**CRITICAL issues block deployment.** Other severities are warnings.
+**CRITICAL issues block deployment.** This includes loop safety issues that could cause billing explosions.
 
-### Performance Budgeter (NEW)
+### Performance Budgeter
 
-The hook now estimates bundle size and warns about tier limits:
+The hook estimates bundle size and warns about tier limits:
 - **Free tier**: 1MB compressed - `[HIGH]` if exceeded
 - **Standard tier**: 10MB compressed - `[CRITICAL]` if exceeded
 - Detects heavy dependencies: `moment`, `lodash`, `aws-sdk`, `sharp`
+
+### Loop Detection & Cost Simulation (NEW)
+
+The hook scans source code for loop-sensitive patterns:
+- D1 queries inside `for`/`while`/`forEach` blocks
+- R2 `.put()` calls inside loops
+- `setInterval` in Durable Objects without termination
+- `fetch(request.url)` self-recursion patterns
+- Unbounded `while(true)` or `for(;;)` loops
+
+Detected patterns include **cost simulation** estimates.
 
 ## MCP Tool Integration
 
@@ -217,7 +304,7 @@ For `--validate` mode, configure these Cloudflare MCP servers:
 | `/cf-design` | Full functionality | Same |
 | `/cf-pattern` | Full functionality | Same |
 | Pre-deploy hook | Full functionality | Same |
-| All 7 skills | Full functionality | Same |
+| All 11 skills | Full functionality | Same |
 | All 3 agents | Static analysis | + Real-time data |
 
 **Graceful Degradation**: Commands continue with static analysis if MCP tools are unavailable, tagging affected findings as `[INCOMPLETE]`.
@@ -263,6 +350,16 @@ This plugin includes built-in guardrails to prevent unexpected Cloudflare bills.
 | Queues | High retry counts | COST001 | `max_retries > 2` |
 | Workers AI | Large models for simple tasks | BUDGET004 | Model name contains `70b` |
 
+### Loop Safety Quick Reference (NEW)
+
+| Loop Type | Trap ID | Guardian Rule | Detection |
+|-----------|---------|---------------|-----------|
+| Worker self-fetch | TRAP-LOOP-001 | LOOP005 | `fetch(request.url)` |
+| Queue retry storm | TRAP-LOOP-002 | LOOP006, LOOP008 | No DLQ, high retries |
+| DO setInterval | TRAP-LOOP-003 | LOOP004 | `setInterval` in DO |
+| N+1 queries | TRAP-LOOP-004 | LOOP002 | SQL in loop |
+| R2 write flood | TRAP-LOOP-005 | LOOP003 | `.put()` in loop |
+
 ### Provenance Tagging for Cost Warnings
 
 All cost warnings include provenance tags for transparency:
@@ -285,20 +382,22 @@ When Claude suggests code changes involving D1, R2, or Durable Objects, the guar
 ```
 cloudflare-engineer/
 ├── .claude-plugin/plugin.json    # Plugin manifest
-├── skills/                       # 10 auto-invoked skills
-│   ├── architect/                # Architecture + Edge-Native
-│   ├── guardian/                 # Security + Budget + Privacy
-│   ├── implement/                # Code scaffolding
+├── skills/                       # 11 auto-invoked skills
+│   ├── architect/                # Architecture + Edge-Native + Billing Safety
+│   ├── guardian/                 # Security + Budget + Privacy + Loop Auditing
+│   ├── implement/                # Code scaffolding + Queue Safety
+│   ├── loop-breaker/             # Recursion guards + Loop protection (NEW)
 │   ├── optimize-costs/           # Cost analysis
 │   ├── scale/                    # Scaling patterns
 │   ├── probes/                   # MCP queries
 │   ├── patterns/                 # Pattern catalog
-│   ├── zero-trust/               # Access policies (NEW)
-│   ├── custom-hostnames/         # SSL for SaaS (NEW)
-│   └── media-streaming/          # Stream & Images (NEW)
+│   ├── zero-trust/               # Access policies
+│   ├── custom-hostnames/         # SSL for SaaS
+│   └── media-streaming/          # Stream & Images
 ├── agents/                       # 3 deep-analysis agents
 ├── commands/                     # 4 slash commands
-├── hooks/                        # Pre-deploy validation
+├── hooks/                        # Pre-deploy validation + Loop Detection
+├── COST_SENSITIVE_RESOURCES.md   # Cost trap catalog with TRAP-LOOP-*
 ├── LICENSE                       # MIT
 ├── CONTRIBUTING.md               # Contribution guide
 ├── SECURITY.md                   # Security policy
