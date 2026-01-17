@@ -23,6 +23,8 @@ Proven patterns for solving common Cloudflare architecture challenges. Each patt
 | [service-bindings](#service-bindings) | Monolithic Worker hitting subrequest limits | Decompose with RPC | Medium |
 | [d1-batching](#d1-batching) | High D1 write costs from per-row inserts | Batch writes | Low |
 | [circuit-breaker](#circuit-breaker) | External API failures cascading | Fail-fast with fallback | Medium |
+| [kv-cache-first](#kv-cache-first) | D1 row read explosion on high-traffic endpoints | KV cache before D1 | Low |
+| [r2-cdn-cache](#r2-cdn-cache) | R2 Class B operation costs on public buckets | Edge cache via Cache Rules | Low |
 
 ---
 
@@ -89,6 +91,51 @@ const data = await fetch('https://external-api.com/data');
 - Latency P99 >> P50 (indicating timeouts)
 - Correlation between external service status and Worker errors
 
+### KV-Cache-First Pattern (NEW v1.4.0)
+
+**Trigger Conditions**:
+- D1 query returns list/collection data
+- Endpoint receives >100 requests/minute
+- Query uses unindexed columns in WHERE clause
+- Same data requested by multiple users
+- D1 row reads approaching free tier limits
+
+**Detection** (static):
+```javascript
+// Anti-pattern: Direct D1 read on high-traffic endpoint
+app.get('/products', async (c) => {
+  return c.json(await db.prepare('SELECT * FROM products').all());
+});
+// 1K req/hour × 10K rows = 10M rows/hour = blowing free tier
+```
+
+**Detection** (live):
+- D1 read count >> expected request count
+- High read latency on list endpoints
+- Approaching 5B rows/month free tier limit
+
+### R2 CDN Cache Pattern (NEW v1.4.0)
+
+**Trigger Conditions**:
+- Public R2 bucket serving static assets
+- High Class B operation counts
+- Same objects requested repeatedly
+- No Cache-Control headers configured
+
+**Detection** (static):
+```javascript
+// Anti-pattern: Public R2 without caching
+app.get('/assets/:key', async (c) => {
+  const obj = await c.env.BUCKET.get(c.req.param('key'));
+  return new Response(obj.body);
+  // Every request = Class B op ($0.36/M)
+});
+```
+
+**Detection** (live):
+- R2 Class B operations >> unique object count
+- Same keys appearing repeatedly in logs
+
 ---
 
 ## Pattern Details
@@ -98,6 +145,8 @@ Detailed implementation guides are in separate files:
 - @service-bindings.md - Decompose monolithic Workers into service-bound microservices
 - @d1-batching.md - Optimize D1 write costs with batch operations
 - @circuit-breaker.md - Add resilience for external API dependencies
+- @kv-cache-first.md - Cache D1 reads with KV for high-traffic endpoints (NEW v1.4.0)
+- @r2-cdn-cache.md - Cache R2 objects at the edge for public buckets (NEW v1.4.0)
 
 ---
 
@@ -108,13 +157,22 @@ Is your Worker > 500 lines or hitting subrequest limits?
 ├─ Yes → Consider SERVICE-BINDINGS pattern
 └─ No
    │
-   Is D1 your primary cost driver (>50%)?
-   ├─ Yes → Apply D1-BATCHING pattern
+   Are D1 READS your primary cost driver?
+   ├─ Yes → Apply KV-CACHE-FIRST pattern
+   │        (For high-traffic endpoints with relatively static data)
    └─ No
       │
-      Do you call external APIs?
-      ├─ Yes → Apply CIRCUIT-BREAKER pattern
-      └─ No → Review other optimization opportunities
+      Are D1 WRITES your primary cost driver (>50%)?
+      ├─ Yes → Apply D1-BATCHING pattern
+      └─ No
+         │
+         Do you have a public R2 bucket with many reads?
+         ├─ Yes → Apply R2-CDN-CACHE pattern
+         └─ No
+            │
+            Do you call external APIs?
+            ├─ Yes → Apply CIRCUIT-BREAKER pattern
+            └─ No → Review other optimization opportunities
 ```
 
 ---

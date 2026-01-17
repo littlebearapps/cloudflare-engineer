@@ -88,6 +88,54 @@ const users = await db.prepare('SELECT id, name FROM users').all();
 
 ---
 
+#### TRAP-D1-004: Row Read Explosion (CRITICAL) - NEW v1.4.0
+
+**Pattern**: Unindexed queries causing full table scans on high-traffic endpoints. The primary billing danger for solo developers.
+
+```typescript
+// DISASTER: Full table scan on every request
+app.get('/api/users', async (c) => {
+  // No index on 'status' column = reads ALL rows
+  const users = await db.prepare(
+    'SELECT * FROM users WHERE status = ?'
+  ).bind('active').all();
+  return c.json(users);
+});
+// With 100K rows table:
+// - 1K requests/day = 100M rows read/day
+// - Free tier: 5B rows/month = 166M rows/day
+// - Cost: $0.25/B rows = exceeds free tier in <2 days
+
+// OPTIMIZED: Index + KV cache
+// 1. Add index
+CREATE INDEX idx_users_status ON users(status);
+
+// 2. Cache hot queries in KV
+const cacheKey = `users:active`;
+let users = await c.env.KV.get(cacheKey, 'json');
+if (!users) {
+  users = await db.prepare(
+    'SELECT id, name FROM users WHERE status = ? LIMIT 100'
+  ).bind('active').all();
+  await c.env.KV.put(cacheKey, JSON.stringify(users), { expirationTtl: 60 });
+}
+// KV reads: $0.50/M, cache hit = no D1 cost
+// 1000 requests with 95% cache hit = 50 D1 queries/day
+```
+
+**Real-World Example**: One developer hit the 5 million daily read limit just by browsing their own site during development—each page load triggered a full table scan.
+
+**Detection**:
+- `[STATIC]`: SELECT without WHERE clause on high-traffic routes
+- `[STATIC]`: WHERE clause on column without index in migrations
+- `[LIVE-VALIDATED]`: D1 row read count >> expected request count
+
+**Guardian Rule**: `BUDGET007`
+
+**Pattern Reference**: See `@skills/patterns/kv-cache-first.md`
+
+---
+
 ## R2 (Object Storage)
 
 ### Pricing Model (2026)
@@ -150,6 +198,100 @@ app.post('/upload/url', async (c) => {
 **Detection**:
 - `[STATIC]`: Check for `await c.req.blob()` or `await request.arrayBuffer()` patterns
 - `[LIVE-VALIDATED]`: Check CPU time for upload endpoints
+
+---
+
+#### TRAP-R2-003: Class B Operation Accumulation (MEDIUM) - NEW v1.4.0
+
+**Pattern**: Public R2 bucket serving assets without edge caching. Every request triggers a Class B operation ($0.36/M).
+
+```typescript
+// EXPENSIVE: Every request = Class B operation
+app.get('/assets/:key', async (c) => {
+  const obj = await c.env.ASSETS.get(c.req.param('key'));
+  return new Response(obj?.body);
+});
+// 10M requests/month = $3.60 (exceeds free tier)
+// 100M requests/month = $36.00
+
+// OPTIMIZED: Cache at edge
+app.get('/assets/:key', async (c) => {
+  const cache = caches.default;
+  const cacheKey = new Request(c.req.url);
+
+  // Try cache first (FREE)
+  let response = await cache.match(cacheKey);
+  if (response) return response;
+
+  // Cache miss: fetch from R2
+  const obj = await c.env.ASSETS.get(c.req.param('key'));
+  if (!obj) return c.notFound();
+
+  response = new Response(obj.body, {
+    headers: {
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'Content-Type': obj.httpMetadata?.contentType || 'application/octet-stream',
+    },
+  });
+
+  // Store in cache for next request
+  c.executionCtx.waitUntil(cache.put(cacheKey, response.clone()));
+  return response;
+});
+// Most requests served from edge cache (FREE)
+// Only ~5% cache misses hit R2
+```
+
+**Detection**:
+- `[STATIC]`: Public R2 routes without Cache API or Cache-Control headers
+- `[LIVE-VALIDATED]`: R2 Class B operations >> unique object count
+
+**Guardian Rule**: `BUDGET008`
+
+**Pattern Reference**: See `@skills/patterns/r2-cdn-cache.md`
+
+---
+
+#### TRAP-R2-004: Infrequent Access Minimum Billing Trap (CRITICAL) - NEW v1.4.0
+
+**Pattern**: Using R2 Infrequent Access (IA) storage for buckets that have ANY read operations. Cloudflare bills IA in minimum units—a single operation can trigger a **$9.00 minimum charge**.
+
+```typescript
+// DISASTER: Single read on IA bucket
+const backup = await iaBucket.get('small-config.json');
+// Even though the file is 1KB, you may be billed:
+// - Minimum retrieval unit: ~25M operations worth
+// - Minimum charge: $9.00 for ONE OPERATION
+
+// SAFE: IA only for true cold storage (write-only)
+await iaBucket.put('database-backup-500GB.sql', largeBackup);
+// Never call .get() on IA buckets
+
+// SAFE: Standard storage for any readable content
+const config = await standardBucket.get('small-config.json');
+```
+
+**Cloudflare IA Billing Model**:
+- IA storage is cheaper: ~$0.01/GB/month (vs $0.015 standard)
+- IA retrieval is expensive: $0.36/GB + operation charges
+- **TRAP**: Minimum billing units round up to ~$9 minimum
+
+**When to Use IA**:
+- ✅ True cold storage (disaster recovery backups)
+- ✅ Large files (>100MB) where retrieval cost is amortized
+- ✅ Write-only archives (compliance data, audit logs)
+
+**When to AVOID IA**:
+- ❌ ANY bucket with regular read operations
+- ❌ User-facing asset storage
+- ❌ Files that might be accessed during development
+- ❌ Small files (cost per GB doesn't justify minimum)
+
+**Detection**:
+- `[STATIC]`: Bucket name contains "cold", "archive", "backup", "ia" AND has `.get()` calls
+- `[LIVE-VALIDATED]`: IA retrieval charges appearing in billing
+
+**Guardian Rule**: `BUDGET009`
 
 ---
 
@@ -632,7 +774,10 @@ When adding new Cloudflare services or discovering new cost patterns:
 | Service | Top Cost Trap | Guardian Rule | Detection |
 |---------|---------------|---------------|-----------|
 | D1 | Per-row inserts | BUDGET003 | `for.*\.run\(` pattern |
+| D1 | Row read explosion | BUDGET007 | Unindexed SELECT on high traffic |
 | R2 | Frequent small writes | BUDGET002 | `.put()` in loops |
+| R2 | Class B accumulation | BUDGET008 | Public bucket without cache |
+| R2 | IA minimum billing | BUDGET009 | `.get()` on IA bucket |
 | DO | Overuse for simple KV | BUDGET001 | DO without coordination |
 | KV | Write-heavy patterns | BUDGET005 | High `.put()` frequency |
 | Queues | High retries | COST001 | `max_retries > 2` |
@@ -651,6 +796,14 @@ When adding new Cloudflare services or discovering new cost patterns:
 | Missing cpu_ms | - | LOOP001 | No limits config |
 | Unbounded while | - | LOOP007 | `while(true)` |
 
+### v1.4.0 New Cost Traps
+
+| Trap ID | Service | Severity | Description |
+|---------|---------|----------|-------------|
+| TRAP-D1-004 | D1 | CRITICAL | Row read explosion from unindexed queries |
+| TRAP-R2-003 | R2 | MEDIUM | Class B ops without edge caching |
+| TRAP-R2-004 | R2 | CRITICAL | IA storage with read operations ($9 minimum) |
+
 ---
 
-*Last updated: 2026-01-17 (v1.3.0 - Loop Protection)*
+*Last updated: 2026-01-17 (v1.4.0 - Cost Awareness + Containers + OTel)*

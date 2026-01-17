@@ -4,8 +4,9 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 1.4.x   | :white_check_mark: |
 | 1.3.x   | :white_check_mark: |
-| 1.2.x   | :white_check_mark: |
+| 1.2.x   | :x:                |
 | 1.1.x   | :x:                |
 | 1.0.x   | :x:                |
 
@@ -75,5 +76,19 @@ These features help prevent accidental billing explosions from:
 - N+1 database queries
 - Unbounded loops
 - Durable Objects kept awake by setInterval
+
+## Cost Awareness (v1.4.0+)
+
+The plugin includes **Cost Awareness** to protect against primary billing traps:
+
+- **D1 Row Read Protection** (BUDGET007) - Detects unindexed queries causing full table scans
+- **R2 Class B Caching** (BUDGET008) - Flags public bucket reads without CDN cache
+- **R2 Infrequent Access Trap** (BUDGET009) - Warns about $9 minimum charge on IA bucket reads
+- **Architecture Validation** (ARCH001) - Flags deprecated [site] configurations
+
+These features help prevent accidental billing explosions from:
+- Unindexed D1 queries reading millions of rows per request
+- R2 Class B operations on every request instead of edge cache
+- R2 Infrequent Access storage with read operations (minimum billing trap)
 
 See [COST_SENSITIVE_RESOURCES.md](COST_SENSITIVE_RESOURCES.md) for detailed documentation of cost traps.

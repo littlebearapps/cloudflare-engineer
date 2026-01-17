@@ -2,7 +2,7 @@
 
 ## Overview
 
-Claude Code plugin providing **Platform Architect** capabilities for Cloudflare with **Loop Protection** to prevent denial-of-wallet attacks (v1.3.0).
+Claude Code plugin providing **Platform Architect** capabilities for Cloudflare with **Cost Awareness**, **Container Support**, **Observability Export**, and **Loop Protection** (v1.4.0).
 
 **GitHub**: https://github.com/littlebearapps/cloudflare-engineer
 **Local**: `~/.claude/local-marketplace/cloudflare-engineer/`
@@ -33,7 +33,9 @@ cloudflare-engineer/
 │   │   ├── SKILL.md
 │   │   ├── service-bindings.md
 │   │   ├── d1-batching.md
-│   │   └── circuit-breaker.md
+│   │   ├── circuit-breaker.md
+│   │   ├── kv-cache-first.md   # D1 row read protection (NEW v1.4.0)
+│   │   └── r2-cdn-cache.md     # R2 Class B caching (NEW v1.4.0)
 │   ├── zero-trust/SKILL.md     # Access policy auditing
 │   ├── custom-hostnames/SKILL.md # SSL for SaaS
 │   └── media-streaming/SKILL.md  # Stream & Images
@@ -97,10 +99,11 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 
 | Service | Skills | Hook Checks |
 |---------|--------|-------------|
-| Workers | architect, implement, loop-breaker | PERF001, PERF005, PERF006, LOOP001, LOOP005, LOOP007 |
-| D1 | implement, scale, loop-breaker | BUDGET003, LOOP002 (N+1 queries) |
-| R2 | implement, media-streaming | BUDGET002, LOOP003 (write flood) |
-| KV | implement | BUDGET005 (writes) |
+| Workers | architect, implement, loop-breaker | PERF001, PERF005, PERF006, LOOP001, LOOP005, LOOP007, ARCH001 |
+| Containers | architect | - (NEW v1.4.0) |
+| D1 | implement, scale, loop-breaker, patterns | BUDGET003, BUDGET007, LOOP002 (N+1 queries) |
+| R2 | implement, media-streaming, patterns | BUDGET002, BUDGET008, BUDGET009, LOOP003 (write flood) |
+| KV | implement, patterns | BUDGET005 (writes) |
 | Queues | architect, scale, loop-breaker | RES001, RES002, COST001, LOOP006, LOOP008 |
 | Vectorize | implement | BUDGET006 (scaling) |
 | AI Gateway | optimize-costs | BUDGET004, PRIV003 |
@@ -142,7 +145,11 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 | PERF004 | LOW | observability.logs disabled |
 | PERF005 | CRITICAL/HIGH | Bundle size exceeds tier limits |
 | PERF006 | HIGH | Incompatible native packages |
+| ARCH001 | MEDIUM | Deprecated [site] or pages_build_output_dir (NEW v1.4.0) |
 | BUDGET001-006 | INFO-HIGH | Budget enforcement triggers |
+| BUDGET007 | CRITICAL | D1 row read explosion - unindexed queries (NEW v1.4.0) |
+| BUDGET008 | MEDIUM | R2 Class B without edge caching (NEW v1.4.0) |
+| BUDGET009 | HIGH | R2 Infrequent Access with reads (NEW v1.4.0) |
 | PRIV001-005 | MEDIUM-CRITICAL | Privacy enforcement triggers |
 | ZT001-008 | HIGH-CRITICAL | Zero Trust gaps |
 | LOOP001 | MEDIUM | Missing cpu_ms limit |
@@ -171,6 +178,7 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 
 ## Version History
 
+- v1.4.0 - **Cost Awareness + Containers + Observability**: D1 row read protection (BUDGET007, kv-cache-first pattern), R2 Class B caching (BUDGET008, r2-cdn-cache pattern), R2 IA minimum billing trap (BUDGET009), Workers + Assets architecture (ARCH001), Workload Router for Isolates vs Containers, Observability Export (Axiom/Better Stack/OTel), 2 new patterns, 4 new cost traps (11 skills, 3 agents, 4 commands, 1 hook)
 - v1.3.0 - **Loop Protection upgrade**: Billing Safety Limits in architect, new loop-breaker skill for recursion guards, Queue Safety patterns with idempotency in implement, Loop-Sensitive Resource Auditing in guardian, pre-deploy hook with loop detection and cost simulation, TRAP-LOOP-* cost traps (11 skills, 3 agents, 4 commands, 1 hook)
 - v1.2.0 - Platform Architect upgrade: Vibecoder Proactive Safeguards, Resource Discovery, Edge-Native Constraints, Performance Budgeter, zero-trust, custom-hostnames, media-streaming skills (10 skills, 3 agents, 4 commands, 1 hook)
 - v1.1.0 - Live validation (`--validate`), provenance tagging, probes skill, patterns skill (7 skills, 3 agents, 4 commands, 1 hook)
