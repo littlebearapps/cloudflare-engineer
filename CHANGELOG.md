@@ -5,6 +5,47 @@ All notable changes to the Cloudflare Engineer plugin will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-01-17
+
+### Added
+- **Cost Awareness Upgrade** - Comprehensive protection for primary billing dangers:
+  - **D1 Row Read Protection** (BUDGET007) - Detects unindexed queries causing millions of reads
+  - **R2 Class B Caching** (BUDGET008) - Flags public bucket reads without CDN cache
+  - **R2 Infrequent Access Trap** (BUDGET009) - Warns about $9 minimum charge on IA bucket reads
+  - New `kv-cache-first` pattern for caching D1 reads with KV
+  - New `r2-cdn-cache` pattern for edge caching R2 public assets
+  - TRAP-D1-004: Row read explosion cost trap
+  - TRAP-R2-003: Class B operation accumulation cost trap
+  - TRAP-R2-004: IA minimum billing trap
+- **Workers + Assets Architecture** - Unified frontend + backend:
+  - Default scaffolding now uses `[assets]` block instead of Pages
+  - ARCH001 validation rule for deprecated `[site]` and `pages_build_output_dir`
+  - Updated Template 4 for fullstack SPA architecture
+  - Migration guide from legacy configurations
+- **Workload Router: Isolates vs Containers** - Decision tree in architect skill:
+  - Comparison table for Workers vs Containers (Beta)
+  - Container configuration templates
+  - Hybrid Worker + Container architecture patterns
+  - Cloudflare alternatives for native dependencies
+- **Observability Export** - Log retention beyond 3-7 days:
+  - Axiom integration via Logpush (500GB/month free)
+  - Better Stack / Logtail SDK setup
+  - OpenTelemetry native export patterns
+  - Structured logging with request IDs
+
+### Changed
+- Guardian skill includes D1 Row Read Explosion check and R2 IA warning
+- Architect skill includes Workload Router and Workers + Assets sections
+- Implement skill includes R2 CDN Caching and Observability Export sections
+- Patterns skill now includes 5 patterns (added kv-cache-first, r2-cdn-cache)
+- Pre-deploy hook checks for deprecated [site] configuration
+- Pre-deploy hook detects R2 buckets with IA-suggesting names
+- Updated Cloudflare Service Coverage to include Containers (Beta)
+- Updated all documentation for v1.4.0
+
+### Fixed
+- Pattern Selection Guide now includes D1 read cost optimization path
+
 ## [1.3.0] - 2026-01-17
 
 ### Added

@@ -189,17 +189,24 @@ When adding new validation rules to the pre-deploy hook:
 | RES | Resilience | RES001 - Missing DLQ |
 | COST | Cost | COST001 - High retry count |
 | PERF | Performance | PERF001 - Smart Placement |
-| BUDGET | Budget enforcement | BUDGET001 - DO usage warning |
+| ARCH | Architecture | ARCH001 - Deprecated [site] config |
+| BUDGET | Budget enforcement | BUDGET001-009 - Cost warnings |
 | PRIV | Privacy | PRIV001 - PII in logs |
 | ZT | Zero Trust | ZT001 - Staging without Access |
 | LOOP | Loop Safety (Billing) | LOOP001 - Missing cpu_ms limit |
 
+Current BUDGET rules (v1.4.0):
+- BUDGET001-006: Original budget enforcement triggers
+- BUDGET007: D1 row read explosion (unindexed queries)
+- BUDGET008: R2 Class B without edge caching
+- BUDGET009: R2 Infrequent Access with read operations
+
 Severity levels:
-- **CRITICAL**: Blocks deploy, security risk, or billing explosion risk (includes LOOP* critical)
-- **HIGH**: Should fix before deploy
-- **MEDIUM**: Recommended improvement
+- **CRITICAL**: Blocks deploy, security risk, or billing explosion risk (includes LOOP*, BUDGET007)
+- **HIGH**: Should fix before deploy (includes BUDGET009)
+- **MEDIUM**: Recommended improvement (includes ARCH001, BUDGET008)
 - **LOW**: Nice to have
-- **INFO**: Informational (Budget warnings)
+- **INFO**: Informational (BUDGET001-006 warnings)
 
 ## Adding New Cloudflare Products to Guardrails
 
