@@ -5,6 +5,57 @@ All notable changes to the Cloudflare Engineer plugin will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-01-17
+
+### Added
+- **Loop Protection** - Comprehensive billing safety against infinite loops and runaway processes:
+  - New `loop-breaker` skill with recursion guards, idempotency patterns, and DO hibernation
+  - Recursion depth middleware (X-Recursion-Depth header tracking, HTTP 508 responses)
+  - Service Binding recursion guards with context-passing pattern
+  - Queue idempotency patterns using KV for deduplication
+  - Durable Object hibernation patterns (alarm-based instead of setInterval)
+  - D1 QueryBatcher for N+1 query prevention
+- **Loop-Sensitive Resource Audit** in guardian skill:
+  - New audit rules: LOOP001-LOOP008
+  - Detects D1 queries in loops, R2 writes in loops, setInterval in DOs
+  - Flags Worker self-fetch patterns and unbounded while loops
+  - Checks for missing cpu_ms limits and DLQ configuration
+- **Billing Safety Limits** in architect skill:
+  - CPU time caps section with recommended limits by use case
+  - Subrequest limits and fan-out protection guidance
+  - Architecture checklist for billing safety
+- **Queue Safety Patterns** in implement skill:
+  - Queue Consumer with Idempotency template
+  - DLQ Consumer pattern for failed message inspection
+  - Retry Budget pattern for message lifecycle limits
+  - Circuit Breaker for queue consumers
+- **Loop Detection** in pre-deploy hook:
+  - Source code scanning for loop-sensitive patterns
+  - Detects D1/R2 operations in loops, setInterval, self-fetch, unbounded loops
+  - LOOP001-LOOP008 validation rules (CRITICAL/HIGH/MEDIUM)
+- **Cost Simulation** in pre-deploy hook:
+  - Estimates potential cost impact of detected loop patterns
+  - Shows cost formula and daily/monthly projections
+- **Loop Cost Traps** in COST_SENSITIVE_RESOURCES.md:
+  - TRAP-LOOP-001: Worker Self-Recursion
+  - TRAP-LOOP-002: Queue Retry Storm
+  - TRAP-LOOP-003: Durable Object Wake Loop
+  - TRAP-LOOP-004: N+1 Query Loop
+  - TRAP-LOOP-005: R2 Write Flood
+  - CPU limit as circuit breaker documentation
+
+### Changed
+- Architect skill now includes Billing Safety Limits section
+- Guardian skill now includes Loop-Sensitive Resource Audit category
+- Implement skill now includes Queue Safety patterns section
+- Pre-deploy hook groups loop issues in dedicated "LOOP SAFETY" output section
+- Anti-patterns table in architect skill expanded with loop-related patterns
+- Skill count increased from 10 to 11
+
+### Fixed
+- Pre-deploy hook now properly handles LOOP* rules in severity counting
+- Loop critical issues now show specific warning about billing explosion risk
+
 ## [1.2.0] - 2026-01-08
 
 ### Added

@@ -192,9 +192,10 @@ When adding new validation rules to the pre-deploy hook:
 | BUDGET | Budget enforcement | BUDGET001 - DO usage warning |
 | PRIV | Privacy | PRIV001 - PII in logs |
 | ZT | Zero Trust | ZT001 - Staging without Access |
+| LOOP | Loop Safety (Billing) | LOOP001 - Missing cpu_ms limit |
 
 Severity levels:
-- **CRITICAL**: Blocks deploy, security risk
+- **CRITICAL**: Blocks deploy, security risk, or billing explosion risk (includes LOOP* critical)
 - **HIGH**: Should fix before deploy
 - **MEDIUM**: Recommended improvement
 - **LOW**: Nice to have
