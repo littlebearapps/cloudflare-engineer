@@ -412,6 +412,204 @@ See: COST_SENSITIVE_RESOURCES.md#trap-d1-001-per-row-inserts-critical
 
 ---
 
+## Loop-Induced Cost Traps (Billing Safety)
+
+**CRITICAL**: Infinite loops, recursion, and runaway processes are the #1 cause of unexpected cloud bills. In serverless, a loop isn't frozen UI—it's a **billing multiplier**.
+
+### TRAP-LOOP-001: Worker Self-Recursion (CRITICAL)
+
+**Pattern**: Worker calls itself via `fetch()` creating infinite request chain.
+
+```typescript
+// DISASTER: Each iteration is a new Worker invocation
+app.post('/webhook', async (c) => {
+  // If this webhook triggers itself...
+  const response = await fetch(request.url, {
+    method: 'POST',
+    body: processedData,
+  });
+  // ...infinite loop at $0.30/M requests
+});
+// Cost: Unbounded - can hit rate limits or exhaust budget
+
+// SAFE: Recursion depth tracking
+const DEPTH_HEADER = 'X-Recursion-Depth';
+const MAX_DEPTH = 3;
+
+app.post('/webhook', async (c) => {
+  const depth = parseInt(c.req.header(DEPTH_HEADER) || '0');
+  if (depth > MAX_DEPTH) {
+    return c.json({ error: 'Recursion limit' }, 508);
+  }
+
+  const headers = new Headers();
+  headers.set(DEPTH_HEADER, (depth + 1).toString());
+  // Now safe to call
+});
+```
+
+**Detection**:
+- `[STATIC]`: Pattern `fetch(request.url)` or `fetch(c.req.url)`
+- `[LIVE-VALIDATED]`: Sudden spike in request count from same origin
+
+**Guardian Rules**: `LOOP005`
+**Pre-deploy Hook**: Detects and blocks on CRITICAL
+
+---
+
+### TRAP-LOOP-002: Queue Retry Storm (HIGH)
+
+**Pattern**: Permanent bug causes infinite retries until DLQ (or forever if no DLQ).
+
+```jsonc
+// EXPENSIVE: 5 retries × message cost
+{
+  "queues": {
+    "consumers": [{
+      "queue": "events",
+      "max_retries": 5  // Each retry = $0.40/M
+    }]
+  }
+}
+// 1M messages with permanent failure = 6M × $0.40 = $2.40
+// Without DLQ: retries forever
+
+// SAFE: Low retries + DLQ
+{
+  "queues": {
+    "consumers": [{
+      "queue": "events",
+      "max_retries": 1,
+      "dead_letter_queue": "events-dlq"  // Breaks the loop
+    }]
+  }
+}
+```
+
+**Detection**:
+- `[STATIC]`: `max_retries > 2` without DLQ
+- `[LIVE-VALIDATED]`: DLQ depth increasing, high retry rate
+
+**Guardian Rules**: `LOOP006`, `LOOP008`, `COST001`
+
+---
+
+### TRAP-LOOP-003: Durable Object Wake Loop (HIGH)
+
+**Pattern**: `setInterval` in DO keeps object active and billing for duration.
+
+```typescript
+// EXPENSIVE: DO stays awake billing wall time
+export class BadDO {
+  constructor(state: DurableObjectState) {
+    // This runs FOREVER
+    setInterval(() => this.checkSomething(), 1000);
+    // Duration billing: $12.50/M GB-seconds
+    // 1 hour = 3600 seconds = ~$0.045 per DO per hour
+  }
+}
+
+// SAFE: Alarm-based with hibernation
+export class GoodDO {
+  async alarm() {
+    await this.checkSomething();
+    // Only reschedule if still needed
+    if (await this.shouldContinue()) {
+      await this.state.storage.setAlarm(Date.now() + 1000);
+    }
+    // Otherwise hibernates - no duration billing
+  }
+}
+```
+
+**Detection**:
+- `[STATIC]`: `setInterval` in DO class without `clearInterval`
+- `[LIVE-VALIDATED]`: DO duration charges without corresponding activity
+
+**Guardian Rules**: `LOOP004`
+
+---
+
+### TRAP-LOOP-004: N+1 Query Loop (CRITICAL)
+
+**Pattern**: Database query inside loop causes N+1 operations.
+
+```typescript
+// DISASTER: 1000 users = 1000 D1 queries
+for (const user of users) {
+  const orders = await db
+    .prepare('SELECT * FROM orders WHERE user_id = ?')
+    .bind(user.id)
+    .all();
+}
+// Cost: 1000 × read operations + CPU time
+
+// SAFE: Single batch query
+const userIds = users.map(u => u.id);
+const placeholders = userIds.map(() => '?').join(',');
+const orders = await db
+  .prepare(`SELECT * FROM orders WHERE user_id IN (${placeholders})`)
+  .bind(...userIds)
+  .all();
+// Cost: 1 query regardless of user count
+```
+
+**Detection**:
+- `[STATIC]`: SQL operations inside `for`, `while`, `forEach`, `.map()`
+- `[LIVE-VALIDATED]`: D1 query count >> logical operation count
+
+**Guardian Rules**: `LOOP002`, `BUDGET003`
+
+---
+
+### TRAP-LOOP-005: R2 Write Flood (HIGH)
+
+**Pattern**: R2 Class A operations inside high-frequency loop.
+
+```typescript
+// EXPENSIVE: Each iteration = Class A operation ($4.50/M)
+for (const log of logs) {
+  await bucket.put(`log/${log.id}.json`, JSON.stringify(log));
+}
+// 1M logs = $4.50
+
+// SAFE: Buffer and batch
+const buffer = logs.map(l => JSON.stringify(l)).join('\n');
+await bucket.put(`logs/${Date.now()}.jsonl`, buffer);
+// 1 batch = $0.0000045
+```
+
+**Detection**:
+- `[STATIC]`: `.put()` inside loops
+- `[LIVE-VALIDATED]`: Class A ops >> object count
+
+**Guardian Rules**: `LOOP003`, `BUDGET002`
+
+---
+
+### CPU Limit as Circuit Breaker
+
+The `limits.cpu_ms` setting is your billing safety circuit breaker:
+
+| Use Case | Recommended cpu_ms | Rationale |
+|----------|-------------------|-----------|
+| API endpoint | 50-100ms | Fails fast on loops |
+| DB operations | 100-200ms | Query + serialize time |
+| AI inference | 500-1000ms | Model loading |
+| Batch processing | 5000-10000ms | Legitimate heavy work |
+
+```jsonc
+{
+  "limits": {
+    "cpu_ms": 100  // Kill process if CPU churns >100ms
+  }
+}
+```
+
+**Without this setting**: A tight `while(true)` burns 30s of CPU (paid tier limit) before failing.
+
+---
+
 ## Adding New Cost Traps
 
 When adding new Cloudflare services or discovering new cost patterns:
@@ -441,6 +639,18 @@ When adding new Cloudflare services or discovering new cost patterns:
 | AI | Large models | BUDGET004 | Model name contains `70b` |
 | Vectorize | Approaching limits | BUDGET006 | Vector count monitoring |
 
+### Loop Safety Quick Reference
+
+| Loop Type | Trap ID | Guardian Rule | Detection |
+|-----------|---------|---------------|-----------|
+| Worker self-fetch | TRAP-LOOP-001 | LOOP005 | `fetch(request.url)` |
+| Queue retry storm | TRAP-LOOP-002 | LOOP006, LOOP008 | No DLQ, high retries |
+| DO setInterval | TRAP-LOOP-003 | LOOP004 | `setInterval` in DO |
+| N+1 queries | TRAP-LOOP-004 | LOOP002 | SQL in loop |
+| R2 write flood | TRAP-LOOP-005 | LOOP003 | `.put()` in loop |
+| Missing cpu_ms | - | LOOP001 | No limits config |
+| Unbounded while | - | LOOP007 | `while(true)` |
+
 ---
 
-*Last updated: 2026-01-08 (v1.2.0)*
+*Last updated: 2026-01-17 (v1.3.0 - Loop Protection)*

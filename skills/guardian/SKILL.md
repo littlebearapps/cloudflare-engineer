@@ -137,6 +137,21 @@ If suggesting DO architecture:
 | PRIV004 | R2 public access | HIGH | R2 bucket without authentication |
 | PRIV005 | Analytics PII | MEDIUM | User identifiers in Analytics Engine writes |
 
+### Loop-Sensitive Resource Audit Rules (Billing Safety)
+
+**CRITICAL**: Infinite loops are direct billing multipliers. These rules detect patterns that could cause runaway costs.
+
+| ID | Name | Severity | Check |
+|----|------|----------|-------|
+| LOOP001 | Missing cpu_ms limit | HIGH | No `limits.cpu_ms` in wrangler config |
+| LOOP002 | D1 query in loop | CRITICAL | SQL operations inside for/while/forEach blocks |
+| LOOP003 | R2 write in loop | HIGH | `.put()` calls inside iteration without buffering |
+| LOOP004 | DO setInterval | HIGH | `setInterval` in Durable Object without termination |
+| LOOP005 | Worker self-fetch | CRITICAL | `fetch()` to same Worker URL without depth limit |
+| LOOP006 | Queue no DLQ | HIGH | Queue consumer without dead_letter_queue (retry loop) |
+| LOOP007 | Unbounded while | CRITICAL | `while(true)` or `for(;;)` without break condition |
+| LOOP008 | High retry count | MEDIUM | Queue `max_retries > 2` (cost multiplier) |
+
 ## Audit Workflow
 
 ### Step 1: Parse Wrangler Config
@@ -208,6 +223,112 @@ For privacy-sensitive patterns:
 3. Verify AI prompts have redaction middleware
 4. Check R2 bucket access controls
 5. Review Analytics Engine write patterns
+```
+
+### Step 5d: Run Loop-Sensitive Resource Audit (Billing Safety)
+
+**CRITICAL**: These checks prevent "denial-of-wallet" attacks from runaway loops.
+
+```
+For loop-sensitive patterns:
+
+1. Check wrangler config for `limits.cpu_ms`:
+   - Missing → LOOP001 (HIGH)
+   - Suggest: Add limits.cpu_ms based on use case
+
+2. Scan code for D1 queries in loops:
+   Pattern: for|while|forEach.*\.prepare\(|\.run\(|\.first\(
+   - Found in loop → LOOP002 (CRITICAL)
+   - Cite: TRAP-D1-001 (N+1 query cost explosion)
+   - Fix: Use db.batch() or QueryBatcher pattern
+
+3. Scan code for R2 writes in loops:
+   Pattern: for|while|forEach.*\.put\(
+   - Found in loop → LOOP003 (HIGH)
+   - Cite: TRAP-R2-001 (Class A op explosion)
+   - Fix: Buffer writes, use batch upload
+
+4. Scan Durable Objects for setInterval:
+   Pattern: setInterval\(
+   - Found without clearInterval or alarm() → LOOP004 (HIGH)
+   - Duration billing continues while interval runs
+   - Fix: Use state.storage.setAlarm() for hibernation
+
+5. Scan for Worker self-fetch patterns:
+   Pattern: fetch\(.*request\.url|fetch\(.*self
+   - Missing X-Recursion-Depth handling → LOOP005 (CRITICAL)
+   - Reference: @skills/loop-breaker/SKILL.md
+
+6. Check queue config for DLQ:
+   - Consumer without dead_letter_queue → LOOP006 (HIGH)
+   - Each retry = additional message cost
+
+7. Scan for unbounded loops:
+   Pattern: while\s*\(\s*true\s*\)|for\s*\(\s*;\s*;\s*\)
+   - No break/return condition visible → LOOP007 (CRITICAL)
+
+8. Check queue max_retries:
+   - max_retries > 2 → LOOP008 (MEDIUM)
+   - Cost impact: (retries + 1) × message cost
+```
+
+### Loop-Sensitive Resource Audit Output
+
+When loop issues are found, include in the audit output:
+
+```markdown
+## Loop-Sensitive Resource Audit (Billing Safety)
+
+> **CRITICAL**: Detected patterns that could cause runaway billing.
+
+| ID | Location | Issue | Est. Cost Impact |
+|----|----------|-------|------------------|
+| LOOP002 | src/handlers/import.ts:45 | D1 query in forEach loop | $0.01 per 1K iterations |
+| LOOP005 | src/webhook.ts:23 | fetch(request.url) without depth limit | Unbounded |
+
+### LOOP002: D1 Query in Loop (CRITICAL)
+
+**Location**: `src/handlers/import.ts:45`
+
+**Pattern Detected**:
+```typescript
+for (const item of items) {
+  await db.prepare('INSERT INTO items ...').run();  // N queries
+}
+```
+
+**Cost Analysis**:
+- 10,000 items = 10,000 D1 write operations
+- Cost: 10,000 × $1/M = $0.01 per batch
+- At scale: 1M items/day = $1/day = $30/month
+
+**Fix**: [STATIC:COST_WATCHLIST] TRAP-D1-001
+```typescript
+// Use db.batch() - 1 operation per 1000 items
+const statements = items.map(item =>
+  db.prepare('INSERT INTO items ...').bind(item.name)
+);
+await db.batch(statements);
+```
+
+### LOOP005: Worker Self-Fetch (CRITICAL)
+
+**Location**: `src/webhook.ts:23`
+
+**Pattern Detected**:
+```typescript
+const response = await fetch(request.url, { ... });
+```
+
+**Risk**: Infinite recursion if this webhook triggers itself.
+
+**Fix**: Add recursion depth middleware
+```typescript
+import { recursionGuard } from './middleware/recursion-guard';
+app.use('*', recursionGuard({ maxDepth: 3 }));
+```
+
+See: @skills/loop-breaker/SKILL.md
 ```
 
 ### Step 6: Calculate Score
