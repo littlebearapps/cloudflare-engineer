@@ -2,7 +2,7 @@
 
 ## Overview
 
-Claude Code plugin providing **Platform Architect** capabilities for Cloudflare (upgraded from Senior Developer in v1.2.0).
+Claude Code plugin providing **Platform Architect** capabilities for Cloudflare with **Loop Protection** to prevent denial-of-wallet attacks (v1.3.0).
 
 **GitHub**: https://github.com/littlebearapps/cloudflare-engineer
 **Local**: `~/.claude/local-marketplace/cloudflare-engineer/`
@@ -22,9 +22,10 @@ Claude Code plugin providing **Platform Architect** capabilities for Cloudflare 
 cloudflare-engineer/
 ├── .claude-plugin/plugin.json  # Manifest (name, description, version)
 ├── skills/
-│   ├── architect/SKILL.md      # Architecture + Edge-Native Constraints
-│   ├── guardian/SKILL.md       # Security + Budget + Privacy Enforcement
-│   ├── implement/SKILL.md      # Code scaffolding
+│   ├── architect/SKILL.md      # Architecture + Edge-Native Constraints + Billing Safety
+│   ├── guardian/SKILL.md       # Security + Budget + Privacy + Loop Auditing
+│   ├── implement/SKILL.md      # Code scaffolding + Queue Safety
+│   ├── loop-breaker/SKILL.md   # Recursion guards + Loop protection (NEW v1.3.0)
 │   ├── optimize-costs/SKILL.md # Cost analysis
 │   ├── scale/SKILL.md          # Scaling patterns
 │   ├── probes/SKILL.md         # MCP audit probe queries
@@ -33,14 +34,15 @@ cloudflare-engineer/
 │   │   ├── service-bindings.md
 │   │   ├── d1-batching.md
 │   │   └── circuit-breaker.md
-│   ├── zero-trust/SKILL.md     # Access policy auditing (NEW)
-│   ├── custom-hostnames/SKILL.md # SSL for SaaS (NEW)
-│   └── media-streaming/SKILL.md  # Stream & Images (NEW)
+│   ├── zero-trust/SKILL.md     # Access policy auditing
+│   ├── custom-hostnames/SKILL.md # SSL for SaaS
+│   └── media-streaming/SKILL.md  # Stream & Images
 ├── agents/*.md                 # Auto-discovered agents (with MCP tools)
 ├── commands/*.md               # Slash commands (--validate, --discover)
 ├── hooks/
 │   ├── hooks.json              # Hook configuration
-│   └── pre-deploy-check.py     # Python validation + Performance Budgeter
+│   └── pre-deploy-check.py     # Validation + Performance Budgeter + Loop Detection
+├── COST_SENSITIVE_RESOURCES.md # Cost trap catalog including loop traps
 └── README.md                   # User documentation
 ```
 
@@ -95,15 +97,15 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 
 | Service | Skills | Hook Checks |
 |---------|--------|-------------|
-| Workers | architect, implement | PERF001, PERF005, PERF006 |
-| D1 | implement, scale | BUDGET003 (batching) |
-| R2 | implement, media-streaming | BUDGET002 (writes) |
+| Workers | architect, implement, loop-breaker | PERF001, PERF005, PERF006, LOOP001, LOOP005, LOOP007 |
+| D1 | implement, scale, loop-breaker | BUDGET003, LOOP002 (N+1 queries) |
+| R2 | implement, media-streaming | BUDGET002, LOOP003 (write flood) |
 | KV | implement | BUDGET005 (writes) |
-| Queues | architect, scale | RES001, RES002, COST001 |
+| Queues | architect, scale, loop-breaker | RES001, RES002, COST001, LOOP006, LOOP008 |
 | Vectorize | implement | BUDGET006 (scaling) |
 | AI Gateway | optimize-costs | BUDGET004, PRIV003 |
 | Workflows | architect | - |
-| Durable Objects | scale, guardian | BUDGET001 |
+| Durable Objects | scale, guardian, loop-breaker | BUDGET001, LOOP004 (setInterval) |
 | Access | zero-trust | ZT001-ZT008 |
 | Custom Hostnames | custom-hostnames | - |
 | Stream | media-streaming | - |
@@ -114,14 +116,17 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 | File | Purpose |
 |------|---------|
 | `skills/optimize-costs/SKILL.md` | Pricing formulas, cost patterns |
-| `skills/guardian/SKILL.md` | Security + Budget + Privacy checklist |
-| `skills/architect/SKILL.md` | Mermaid templates, Edge-Native Constraints |
+| `skills/guardian/SKILL.md` | Security + Budget + Privacy + Loop Auditing |
+| `skills/architect/SKILL.md` | Mermaid templates, Edge-Native Constraints, Billing Safety Limits |
+| `skills/loop-breaker/SKILL.md` | Recursion guards, idempotency, DO hibernation (NEW) |
 | `skills/probes/SKILL.md` | MCP tool queries for live validation |
 | `skills/patterns/SKILL.md` | Architecture pattern catalog |
 | `skills/zero-trust/SKILL.md` | Access policy auditing |
 | `skills/custom-hostnames/SKILL.md` | SSL for SaaS patterns |
 | `skills/media-streaming/SKILL.md` | Stream & Images patterns |
-| `hooks/pre-deploy-check.py` | Validation rules + Performance Budgeter |
+| `skills/implement/SKILL.md` | Code scaffolding + Queue Safety patterns |
+| `hooks/pre-deploy-check.py` | Validation + Performance Budgeter + Loop Detection |
+| `COST_SENSITIVE_RESOURCES.md` | Cost trap catalog with TRAP-LOOP-* entries |
 | `commands/cf-audit.md` | Audit + Resource Discovery command |
 | `commands/cf-pattern.md` | Pattern application command |
 
@@ -140,6 +145,14 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 | BUDGET001-006 | INFO-HIGH | Budget enforcement triggers |
 | PRIV001-005 | MEDIUM-CRITICAL | Privacy enforcement triggers |
 | ZT001-008 | HIGH-CRITICAL | Zero Trust gaps |
+| LOOP001 | MEDIUM | Missing cpu_ms limit |
+| LOOP002 | CRITICAL | D1 query in loop (N+1) |
+| LOOP003 | HIGH | R2 write in loop |
+| LOOP004 | HIGH | setInterval in DO without termination |
+| LOOP005 | CRITICAL | Worker self-fetch / recursion |
+| LOOP006 | HIGH | Queue without DLQ (retry loop) |
+| LOOP007 | CRITICAL | Unbounded while(true) loop |
+| LOOP008 | MEDIUM | High queue retry count |
 
 ## Testing Changes
 
@@ -158,6 +171,7 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 
 ## Version History
 
+- v1.3.0 - **Loop Protection upgrade**: Billing Safety Limits in architect, new loop-breaker skill for recursion guards, Queue Safety patterns with idempotency in implement, Loop-Sensitive Resource Auditing in guardian, pre-deploy hook with loop detection and cost simulation, TRAP-LOOP-* cost traps (11 skills, 3 agents, 4 commands, 1 hook)
 - v1.2.0 - Platform Architect upgrade: Vibecoder Proactive Safeguards, Resource Discovery, Edge-Native Constraints, Performance Budgeter, zero-trust, custom-hostnames, media-streaming skills (10 skills, 3 agents, 4 commands, 1 hook)
 - v1.1.0 - Live validation (`--validate`), provenance tagging, probes skill, patterns skill (7 skills, 3 agents, 4 commands, 1 hook)
 - v1.0.0 - Initial release (5 skills, 3 agents, 3 commands, 1 hook)

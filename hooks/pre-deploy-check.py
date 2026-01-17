@@ -3,12 +3,13 @@
 Pre-Deploy Check Hook for Cloudflare Engineer Plugin
 
 This hook intercepts `wrangler deploy` commands and validates the wrangler
-configuration for security, resilience, cost, and PERFORMANCE issues before
-allowing deployment.
+configuration for security, resilience, cost, PERFORMANCE, and LOOP SAFETY
+issues before allowing deployment.
 
-Includes Performance Budgeter for bundle size limits:
-- Free tier: 1MB compressed
-- Standard tier: 10MB compressed
+Includes:
+- Performance Budgeter for bundle size limits (1MB free, 10MB standard)
+- Loop-Sensitive Resource Audit (billing safety)
+- Cost Simulation for detected loop patterns
 
 Exit codes:
 - 0: Allow deployment
@@ -342,6 +343,199 @@ def check_bundle_size(working_dir: str, config: dict) -> list[dict]:
     return issues
 
 
+def check_cpu_limits(config: dict) -> list[dict]:
+    """Check for missing CPU time limits (loop protection)."""
+    issues = []
+
+    limits = config.get("limits", {})
+    cpu_ms = limits.get("cpu_ms")
+
+    if cpu_ms is None:
+        issues.append({
+            "id": "LOOP001",
+            "severity": "MEDIUM",
+            "message": "No cpu_ms limit configured - loops could run unchecked",
+            "fix": 'Add "limits": { "cpu_ms": 100 } to kill runaway loops',
+        })
+    elif cpu_ms > 10000:
+        issues.append({
+            "id": "LOOP001",
+            "severity": "LOW",
+            "message": f"High cpu_ms limit ({cpu_ms}ms) - consider lower for API endpoints",
+            "fix": "Use 100-500ms for APIs, 5000-10000ms for heavy processing",
+        })
+
+    return issues
+
+
+def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
+    """Scan source code for loop-sensitive patterns that could cause billing issues."""
+    issues = []
+    src_dir = Path(working_dir) / "src"
+
+    if not src_dir.exists():
+        return issues
+
+    # Patterns to detect
+    loop_patterns = [
+        # D1 queries in loops
+        (
+            r'(for|while|forEach|\.map)\s*\([^)]*\)[^{]*\{[^}]*\.(prepare|run|first|all)\s*\(',
+            "LOOP002",
+            "CRITICAL",
+            "D1 query inside loop - N+1 cost explosion",
+            "Use db.batch() for bulk operations (TRAP-D1-001)",
+        ),
+        # R2 writes in loops
+        (
+            r'(for|while|forEach|\.map)\s*\([^)]*\)[^{]*\{[^}]*\.put\s*\(',
+            "LOOP003",
+            "HIGH",
+            "R2 write inside loop - Class A operation explosion",
+            "Buffer writes or use multipart upload (TRAP-R2-001)",
+        ),
+        # setInterval without clear pattern
+        (
+            r'setInterval\s*\([^)]+\)',
+            "LOOP004",
+            "MEDIUM",
+            "setInterval detected - verify termination condition exists",
+            "Use state.storage.setAlarm() in Durable Objects for hibernation",
+        ),
+        # Unbounded while loops
+        (
+            r'while\s*\(\s*true\s*\)|for\s*\(\s*;\s*;\s*\)',
+            "LOOP007",
+            "CRITICAL",
+            "Unbounded loop detected - could run until CPU limit",
+            "Add explicit break condition and iteration limit",
+        ),
+        # Self-fetch patterns
+        (
+            r'fetch\s*\(\s*request\.url',
+            "LOOP005",
+            "CRITICAL",
+            "Worker fetching own URL - potential infinite recursion",
+            "Add X-Recursion-Depth middleware (see loop-breaker skill)",
+        ),
+        # Recursive function without depth
+        (
+            r'(async\s+)?function\s+(\w+)[^{]*\{[^}]*\2\s*\(',
+            "LOOP005",
+            "HIGH",
+            "Recursive function detected - verify depth limit exists",
+            "Add maxDepth parameter and check before recursing",
+        ),
+    ]
+
+    for ts_file in src_dir.rglob("*.ts"):
+        if "node_modules" in str(ts_file):
+            continue
+
+        try:
+            content = ts_file.read_text()
+            relative_path = ts_file.relative_to(working_dir)
+
+            for pattern, rule_id, severity, message, fix in loop_patterns:
+                matches = list(re.finditer(pattern, content, re.MULTILINE | re.DOTALL))
+                for match in matches:
+                    # Get line number
+                    line_num = content[:match.start()].count('\n') + 1
+                    issues.append({
+                        "id": rule_id,
+                        "severity": severity,
+                        "message": f"{message} at {relative_path}:{line_num}",
+                        "fix": fix,
+                    })
+        except Exception:
+            pass
+
+    # Deduplicate by file and rule
+    seen = set()
+    unique_issues = []
+    for issue in issues:
+        key = (issue["id"], issue["message"].split(" at ")[0])
+        if key not in seen:
+            seen.add(key)
+            unique_issues.append(issue)
+
+    return unique_issues
+
+
+def estimate_loop_cost(working_dir: str, config: dict) -> list[dict]:
+    """Estimate potential cost impact of detected loop patterns."""
+    issues = []
+    src_dir = Path(working_dir) / "src"
+
+    if not src_dir.exists():
+        return issues
+
+    # Cost rates (per million)
+    COSTS = {
+        "d1_write": 1.00,  # $1/M writes
+        "d1_read": 0.25 / 1000,  # $0.25/B reads = $0.00025/M
+        "r2_class_a": 4.50,  # $4.50/M writes
+        "r2_class_b": 0.36,  # $0.36/M reads
+        "kv_write": 5.00,  # $5/M writes
+        "queue_msg": 0.40,  # $0.40/M messages
+    }
+
+    estimated_costs = []
+
+    for ts_file in src_dir.rglob("*.ts"):
+        if "node_modules" in str(ts_file):
+            continue
+
+        try:
+            content = ts_file.read_text()
+            relative_path = ts_file.relative_to(working_dir)
+
+            # D1 writes in loops
+            d1_loop_matches = re.findall(
+                r'(for|while|forEach)\s*\([^)]*\)[^{]*\{[^}]*\.(run|batch)\s*\(',
+                content,
+                re.MULTILINE | re.DOTALL
+            )
+            if d1_loop_matches:
+                estimated_costs.append({
+                    "pattern": "D1 writes in loop",
+                    "file": str(relative_path),
+                    "estimate": "If loop runs 1000× on 1000 requests: ~$1.00/day",
+                    "formula": "iterations × requests × $1/M",
+                })
+
+            # R2 writes in loops
+            r2_loop_matches = re.findall(
+                r'(for|while|forEach)\s*\([^)]*\)[^{]*\.put\s*\(',
+                content,
+                re.MULTILINE | re.DOTALL
+            )
+            if r2_loop_matches:
+                estimated_costs.append({
+                    "pattern": "R2 writes in loop",
+                    "file": str(relative_path),
+                    "estimate": "If loop runs 1000× on 1000 requests: ~$4.50/day",
+                    "formula": "iterations × requests × $4.50/M",
+                })
+
+        except Exception:
+            pass
+
+    if estimated_costs:
+        cost_summary = "\n".join(
+            f"  - {c['pattern']} in {c['file']}: {c['estimate']}"
+            for c in estimated_costs[:3]  # Limit to top 3
+        )
+        issues.append({
+            "id": "COST_SIM",
+            "severity": "INFO",
+            "message": f"Loop Cost Simulation:\n{cost_summary}",
+            "fix": "Review loop patterns and add batching/buffering",
+        })
+
+    return issues
+
+
 def check_queue_dlq_comprehensive(config: dict) -> list[dict]:
     """Enhanced DLQ check with more context."""
     issues = []
@@ -401,14 +595,29 @@ def check_queue_dlq_comprehensive(config: dict) -> list[dict]:
 def run_audit(config: dict, working_dir: str = "") -> list[dict]:
     """Run all audit checks on config."""
     issues = []
+
+    # Security checks
     issues.extend(check_secrets_in_vars(config))
+
+    # Resilience checks
     issues.extend(check_queue_dlq_comprehensive(config))  # Enhanced DLQ check
+
+    # Performance checks
     issues.extend(check_observability(config))
     issues.extend(check_smart_placement(config))
 
-    # Performance Budgeter - check bundle size
+    # Loop Safety checks (Billing Protection)
+    issues.extend(check_cpu_limits(config))
+
     if working_dir:
+        # Performance Budgeter - check bundle size
         issues.extend(check_bundle_size(working_dir, config))
+
+        # Loop-Sensitive Resource Audit
+        issues.extend(scan_source_for_loop_patterns(working_dir))
+
+        # Cost Simulation for detected patterns
+        issues.extend(estimate_loop_cost(working_dir, config))
 
     return issues
 
@@ -420,15 +629,40 @@ def format_issues(issues: list[dict]) -> str:
 
     lines = ["", "⚠️  PRE-DEPLOY VALIDATION ISSUES FOUND", "=" * 45, ""]
 
-    by_severity = {"CRITICAL": [], "HIGH": [], "MEDIUM": [], "LOW": []}
-    for issue in issues:
+    # Separate loop safety issues for special section
+    loop_issues = [i for i in issues if i.get("id", "").startswith("LOOP")]
+    other_issues = [i for i in issues if not i.get("id", "").startswith("LOOP") and i.get("id") != "COST_SIM"]
+    cost_sim = [i for i in issues if i.get("id") == "COST_SIM"]
+
+    # Format loop safety section if present
+    if loop_issues:
+        lines.append("🔄 LOOP SAFETY (Billing Protection)")
+        lines.append("-" * 40)
+        for issue in loop_issues:
+            emoji = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🔵"}.get(issue["severity"], "⚪")
+            lines.append(f"   {emoji} [{issue['id']}] {issue['message']}")
+            lines.append(f"      Fix: {issue['fix']}")
+        lines.append("")
+
+    # Format cost simulation if present
+    if cost_sim:
+        lines.append("💰 COST SIMULATION")
+        lines.append("-" * 40)
+        for issue in cost_sim:
+            lines.append(f"   {issue['message']}")
+            lines.append(f"   Recommendation: {issue['fix']}")
+        lines.append("")
+
+    # Format other issues by severity
+    by_severity = {"CRITICAL": [], "HIGH": [], "MEDIUM": [], "LOW": [], "INFO": []}
+    for issue in other_issues:
         severity = issue.get("severity", "MEDIUM")
         by_severity.setdefault(severity, []).append(issue)
 
-    for severity in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+    for severity in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]:
         severity_issues = by_severity.get(severity, [])
         if severity_issues:
-            emoji = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🔵"}[severity]
+            emoji = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🔵", "INFO": "ℹ️"}[severity]
             lines.append(f"{emoji} {severity}")
             for issue in severity_issues:
                 lines.append(f"   [{issue['id']}] {issue['message']}")
@@ -488,15 +722,18 @@ def main():
         debug_log("No issues found, allowing deploy")
         sys.exit(0)
 
-    # Check severity
+    # Check severity (LOOP issues with CRITICAL are especially dangerous)
     critical_count = sum(1 for i in issues if i.get("severity") == "CRITICAL")
     high_count = sum(1 for i in issues if i.get("severity") == "HIGH")
+    loop_critical = sum(1 for i in issues if i.get("id", "").startswith("LOOP") and i.get("severity") == "CRITICAL")
 
     # Format and output issues
     output = format_issues(issues)
 
     if critical_count > 0:
         output += f"\n🛑 DEPLOYMENT BLOCKED: {critical_count} critical issue(s) found.\n"
+        if loop_critical > 0:
+            output += f"   ⚠️  {loop_critical} loop safety issue(s) could cause billing explosion.\n"
         output += "Fix critical issues before deploying.\n"
         print(output, file=sys.stderr)
         sys.exit(2)  # Block deployment
