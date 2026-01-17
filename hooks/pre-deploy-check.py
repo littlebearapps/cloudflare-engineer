@@ -450,11 +450,11 @@ def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
         except Exception:
             pass
 
-    # Deduplicate by file and rule
+    # Deduplicate by rule and file location (full message includes file:line)
     seen = set()
     unique_issues = []
     for issue in issues:
-        key = (issue["id"], issue["message"].split(" at ")[0])
+        key = (issue["id"], issue["message"])
         if key not in seen:
             seen.add(key)
             unique_issues.append(issue)
