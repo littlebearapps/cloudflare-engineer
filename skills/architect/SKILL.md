@@ -26,13 +26,18 @@ Design production-ready Cloudflare architectures with proper service selection, 
 - Data flow sequence diagrams
 - Component relationship graphs
 
-### 4. Edge-Native Constraint Validation (NEW)
+### 4. Edge-Native Constraint Validation
 - Cross-reference proposed code against Workers runtime compatibility
 - Flag non-standard Node.js libraries
 - Suggest `node:` polyfills or Cloudflare alternatives
 - Verify compatibility flags in wrangler config
 
-### 5. Wrangler Health Check
+### 5. Workers + Assets Architecture (NEW v1.4.0)
+- Default to unified Worker with `[assets]` block for frontend + API
+- Flag deprecated `[site]` configurations
+- Recommend migration from legacy Pages to Workers + Assets model
+
+### 6. Wrangler Health Check
 
 Before designing or deploying, verify the local wrangler installation is current.
 
@@ -89,11 +94,201 @@ To update: `npm install -g wrangler@latest`
 
 | Need | Service | Limits | Best For |
 |------|---------|--------|----------|
-| HTTP handlers | Workers | 128MB, 30s/req | API endpoints |
+| HTTP handlers | Workers (Isolates) | 128MB, 30s/req | API endpoints |
 | Background jobs | Queues | 128KB/msg, batches ≤100 | Async processing |
 | Long-running tasks | Workflows | 1024 steps, 1GB state | Multi-step pipelines |
 | Stateful coordination | Durable Objects | Per-object | Sessions, locks |
 | Scheduled jobs | Cron Triggers | 1-minute minimum | Periodic tasks |
+| OS-level dependencies | **Containers (Beta)** | Full Linux | FFmpeg, headless browsers |
+
+## Workload Router: Isolates vs Containers (NEW v1.4.0)
+
+**IMPORTANT**: Cloudflare Containers launched in Beta (2025). The strict "Edge-Native" constraints no longer apply to ALL workloads. Use this decision tree to select the right compute model.
+
+### Decision Tree
+
+```
+Does your workload require OS-level dependencies?
+│
+├─ NO: Does it need Node.js fs, net, or child_process?
+│   │
+│   ├─ NO: Use Workers (Isolates)
+│   │       ✅ Standard API/Web workloads
+│   │       ✅ Database CRUD (D1, KV, R2)
+│   │       ✅ AI inference (Workers AI)
+│   │       ✅ WebSocket handling (Durable Objects)
+│   │
+│   └─ YES: Can it be replaced with Cloudflare services?
+│       │
+│       ├─ fs → R2 (object storage)
+│       │    Use Workers (Isolates)
+│       │
+│       ├─ net/http → fetch() or Hyperdrive
+│       │    Use Workers (Isolates)
+│       │
+│       └─ child_process → Containers (if truly needed)
+│            Use Containers (Beta)
+│
+└─ YES: What OS-level dependency?
+    │
+    ├─ FFmpeg (video processing)
+    │    Use Containers
+    │    OR: Cloudflare Stream for simple transcoding
+    │
+    ├─ Puppeteer/Playwright (headless browser)
+    │    Use Containers
+    │    OR: Cloudflare Browser Rendering API
+    │
+    ├─ ImageMagick/Sharp (image processing)
+    │    Use Containers
+    │    OR: Cloudflare Images for transforms
+    │
+    ├─ Python with native libs (numpy, pandas, scipy)
+    │    Use Containers
+    │    Note: Python scripts in Workers have limitations
+    │
+    └─ Long-running processes (>30 seconds)
+         Use Containers or Workflows
+         Containers: Arbitrary duration, full control
+         Workflows: Step-based, automatic retry/resume
+```
+
+### Comparison: Workers (Isolates) vs Containers
+
+| Aspect | Workers (Isolates) | Containers (Beta) |
+|--------|-------------------|-------------------|
+| **Startup** | ~0ms (instant) | ~seconds (cold start) |
+| **Memory** | 128MB | Configurable (256MB-4GB) |
+| **CPU Time** | 30s max | Configurable (minutes-hours) |
+| **Runtime** | V8 isolate (JS/WASM) | Full Linux container |
+| **File System** | ❌ No (use R2) | ✅ Yes (ephemeral) |
+| **Native Binaries** | ❌ No | ✅ Yes |
+| **Network** | fetch() only | Full TCP/UDP |
+| **Cost** | $0.30/M requests | Per-second billing |
+| **Scale** | Instant, global | Regional, warm pools |
+| **Best For** | APIs, web, serverless | Heavy compute, native deps |
+
+### Container Configuration (When Needed)
+
+```jsonc
+{
+  "name": "video-processor",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+
+  // Container configuration (Beta)
+  "containers": {
+    "enabled": true,
+    "image": "my-registry/video-processor:latest",
+    "memory": "1GB",
+    "cpu": 1,
+    "command": ["python", "process.py"],
+    "env": {
+      "FFMPEG_PATH": "/usr/bin/ffmpeg"
+    }
+  },
+
+  // Queue triggers container processing
+  "queues": {
+    "consumers": [{
+      "queue": "video-jobs",
+      "max_batch_size": 1,
+      "max_retries": 2,
+      "dead_letter_queue": "video-jobs-dlq"
+    }]
+  }
+}
+```
+
+### Hybrid Architecture: Workers + Containers
+
+For complex applications, combine both:
+
+```mermaid
+graph LR
+    subgraph "Edge (Workers)"
+        API[API Worker<br/>Hono + Auth]
+        Q[Queue Producer]
+    end
+    subgraph "Compute (Containers)"
+        P[Processor<br/>FFmpeg/Python]
+    end
+    subgraph "Storage"
+        R2[(R2<br/>Video Files)]
+        D1[(D1<br/>Metadata)]
+    end
+
+    Client --> API
+    API --> Q
+    Q --> P
+    P --> R2
+    P --> D1
+    API --> D1
+```
+
+**Implementation Pattern:**
+
+```typescript
+// Worker: Handle API requests, queue heavy jobs
+app.post('/api/videos/process', async (c) => {
+  // Validate and store input
+  const videoKey = await storeUpload(c.env.R2, c.req);
+
+  // Queue for container processing (not in Worker)
+  await c.env.VIDEO_QUEUE.send({
+    type: 'process_video',
+    videoKey,
+    options: { format: 'mp4', quality: 'high' }
+  });
+
+  return c.json({ status: 'queued', videoKey });
+});
+
+// Container (separate process): Heavy lifting
+// container/process.py
+import ffmpeg
+
+def process_video(video_key, options):
+    # Download from R2
+    input_path = download_from_r2(video_key)
+
+    # FFmpeg processing (not possible in Workers)
+    ffmpeg.input(input_path).output(
+        output_path,
+        format=options['format'],
+        vcodec='libx264'
+    ).run()
+
+    # Upload result to R2
+    upload_to_r2(output_path)
+```
+
+### When to Avoid Containers
+
+**Use Workers Instead When:**
+- Simple API endpoints (no native deps)
+- Database operations (D1, KV, R2)
+- AI inference (Workers AI handles this)
+- Image transformations (Cloudflare Images)
+- Video delivery (Cloudflare Stream)
+- PDF generation (use WebAssembly libs)
+
+**Container Overhead:**
+- Cold start latency (seconds vs milliseconds)
+- Higher cost for simple operations
+- Regional deployment vs global edge
+- Container registry management
+
+### Cloudflare Alternatives to Native Dependencies
+
+| Native Dependency | Cloudflare Alternative |
+|-------------------|------------------------|
+| FFmpeg | Cloudflare Stream (transcode, HLS) |
+| Puppeteer | Browser Rendering API |
+| Sharp/ImageMagick | Cloudflare Images |
+| Redis | KV, Durable Objects |
+| PostgreSQL/MySQL | Hyperdrive (connection pooling) |
+| S3 SDK | R2 (S3-compatible API) |
 
 ### AI/ML Selection
 
@@ -225,6 +420,150 @@ app.get('/file/:id', async (c) => {
 
 export default app;
 ```
+
+## Workers + Assets Architecture (NEW v1.4.0)
+
+**IMPORTANT**: Cloudflare has architecturally merged Pages into Workers. The legacy `pages_build_output_dir` and `[site]` configurations are being replaced by the `[assets]` block within `wrangler.toml`. This allows a single Worker to serve both frontend (SPA) and backend API.
+
+### Legacy vs Modern Configuration
+
+**DEPRECATED - Legacy `[site]` config:**
+```toml
+# ❌ DEPRECATED - Don't use [site] for new projects
+[site]
+bucket = "./dist"
+```
+
+**DEPRECATED - Legacy Pages config:**
+```toml
+# ❌ DEPRECATED - pages_build_output_dir is being phased out
+pages_build_output_dir = "./dist"
+```
+
+**RECOMMENDED - Modern `[assets]` config:**
+```jsonc
+{
+  "name": "my-fullstack-app",
+  "main": "src/worker.ts",
+  "compatibility_date": "2025-01-01",
+
+  // NEW: Unified assets block
+  "assets": {
+    "directory": "./dist",     // Static files directory (Vite/Next.js output)
+    "binding": "ASSETS",       // Optional: Access assets in Worker code
+    "html_handling": "auto-trailing-slash",  // SPA routing
+    "not_found_handling": "single-page-application"  // 404 → index.html for SPAs
+  },
+
+  // API bindings alongside assets
+  "d1_databases": [
+    { "binding": "DB", "database_name": "app-db", "database_id": "..." }
+  ]
+}
+```
+
+### Migration from Legacy Configurations
+
+If you encounter a project with `[site]` or `pages_build_output_dir`:
+
+```
+Legacy Configuration Migration:
+- Detected: [site] block in wrangler.toml
+- Status: ⚠️ DEPRECATED - Will stop working in future wrangler versions
+- Action Required: Migrate to [assets] block
+
+Migration Steps:
+1. Replace [site] with assets block:
+   BEFORE:
+   [site]
+   bucket = "./dist"
+
+   AFTER:
+   "assets": {
+     "directory": "./dist",
+     "html_handling": "auto-trailing-slash",
+     "not_found_handling": "single-page-application"
+   }
+
+2. Update build scripts if needed:
+   - Ensure frontend build outputs to the directory specified
+   - Vite: vite.config.ts → build.outDir: "./dist"
+   - Next.js: next.config.js → output: "export", distDir: "./dist"
+
+3. Test locally: npx wrangler dev
+```
+
+### Unified Worker + Assets Pattern
+
+**Use Case**: Fullstack application with React/Vue/Svelte frontend and API backend.
+
+```mermaid
+graph LR
+    subgraph "Single Worker"
+        A[Assets<br/>./dist] --> R{Router}
+        W[API Routes<br/>./src] --> R
+    end
+    subgraph "Storage"
+        D1[(D1)]
+        KV[(KV)]
+    end
+
+    Client --> R
+    R -->|/api/*| W
+    R -->|/*| A
+    W --> D1
+    W --> KV
+```
+
+**Implementation:**
+
+```typescript
+// src/worker.ts
+import { Hono } from 'hono';
+import { apiRoutes } from './routes/api';
+
+const app = new Hono<{ Bindings: Env }>();
+
+// API routes handled by Worker
+app.route('/api', apiRoutes);
+
+// Static assets handled by assets binding (automatic)
+// Requests not matching /api/* are served from ./dist
+
+export default app;
+```
+
+**Wrangler Configuration:**
+
+```jsonc
+{
+  "name": "fullstack-app",
+  "main": "src/worker.ts",
+  "compatibility_date": "2025-01-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "app-db", "database_id": "..." }
+  ],
+  "kv_namespaces": [
+    { "binding": "CACHE", "id": "..." }
+  ]
+}
+```
+
+### When to Use Workers + Assets
+
+| Scenario | Recommendation |
+|----------|----------------|
+| New fullstack app | ✅ Use Workers + Assets |
+| Existing Pages project | ⚠️ Migrate to Workers + Assets |
+| Static-only site | ✅ Workers + Assets (simpler than Pages) |
+| API-only backend | Use Worker without assets block |
+| Complex multi-site | Consider separate Workers with service bindings |
 
 ## Architecture Templates
 
@@ -382,42 +721,75 @@ graph LR
 }
 ```
 
-### Template 4: Static Site with Functions
+### Template 4: Fullstack App (Workers + Assets)
 
-**Use Case**: Marketing site with API endpoints
+**Use Case**: Fullstack SPA with API backend (React, Vue, Svelte, etc.)
 
 ```mermaid
 graph LR
-    subgraph "Static"
-        Assets[R2<br/>Static Assets]
+    subgraph "Single Worker"
+        Assets[Assets<br/>./dist]
+        API[API Routes<br/>./src]
     end
-    subgraph "Dynamic"
-        W[Worker<br/>API Routes]
+    subgraph "Storage"
         D1[(D1)]
+        KV[(KV Cache)]
     end
 
-    Client --> Assets
-    Client --> W --> D1
+    Client -->|/*| Assets
+    Client -->|/api/*| API
+    API --> D1
+    API --> KV
 ```
 
-**Wrangler Config**:
+**Wrangler Config** (Modern `[assets]` block):
 ```jsonc
 {
-  "name": "marketing-site",
+  "name": "fullstack-app",
   "main": "src/worker.ts",
   "compatibility_date": "2025-01-01",
+
+  // NEW: Unified assets serving (replaces [site] and Pages)
   "assets": {
-    "directory": "./dist",
-    "binding": "ASSETS"
+    "directory": "./dist",              // Vite/Next.js/SvelteKit output
+    "binding": "ASSETS",                // Optional: access in Worker code
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application"  // 404 → index.html for SPA routing
   },
+
   "d1_databases": [
-    { "binding": "DB", "database_name": "site-db", "database_id": "..." }
+    { "binding": "DB", "database_name": "app-db", "database_id": "..." }
+  ],
+  "kv_namespaces": [
+    { "binding": "CACHE", "id": "..." }
   ],
   "routes": [
     { "pattern": "example.com/*", "zone_name": "example.com" }
   ]
 }
 ```
+
+**Worker Implementation:**
+```typescript
+// src/worker.ts
+import { Hono } from 'hono';
+import { apiRoutes } from './routes/api';
+
+const app = new Hono<{ Bindings: Env }>();
+
+// API routes
+app.route('/api', apiRoutes);
+
+// Health check
+app.get('/health', (c) => c.json({ status: 'ok' }));
+
+// All other routes serve static assets automatically
+// (handled by assets binding)
+
+export default app;
+```
+
+> **Note**: This replaces the legacy `[site]` and `pages_build_output_dir` configurations. See "Workers + Assets Architecture" section above for migration guide.
 
 ## Design Workflow
 

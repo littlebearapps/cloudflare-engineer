@@ -1,7 +1,7 @@
 {
   "name": "cloudflare-engineer",
-  "version": "1.3.0",
-  "description": "Platform Architect capabilities for Cloudflare - architecture design with Edge-Native Constraints and Billing Safety Limits, cost optimization with Vibecoder Proactive Safeguards, security auditing with Zero Trust, SSL for SaaS, media streaming patterns, and Loop Protection to prevent denial-of-wallet attacks. Includes recursion guards, queue safety, and cost simulation.",
+  "version": "1.4.0",
+  "description": "Platform Architect capabilities for Cloudflare - architecture design with Workers + Assets, Isolates vs Containers decision tree, D1 row read protection, R2 Class B caching, observability export (Axiom/Better Stack), Loop Protection, and billing safety. Includes Edge-Native Constraints, Vibecoder Proactive Safeguards, Zero Trust, SSL for SaaS, media streaming patterns, recursion guards, queue safety, and cost simulation.",
   "author": {
     "name": "Little Bear Apps",
     "email": "hello@littlebearapps.com"
@@ -28,6 +28,10 @@
     "images",
     "loop-protection",
     "billing-safety",
-    "recursion-guard"
+    "recursion-guard",
+    "containers",
+    "observability",
+    "opentelemetry",
+    "assets"
   ]
 }

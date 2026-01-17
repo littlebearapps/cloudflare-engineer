@@ -36,11 +36,96 @@ Budget Whisperer Check:
   Recommendation: Wrap in db.batch() with max 1000 statements per batch.
 ```
 
-### R2 Write Operations
+### D1 Read Operations (Row Read Explosion)
+**CRITICAL**: D1's primary danger for solo devs is **Row Reads**, not writes. Unoptimized queries can trigger millions of reads per page view. One user hit the 5 million daily limit just by browsing their own site.
+
+If suggesting code that includes `SELECT`, `.all()`, `.first()`, or database reads:
+1. **Check for WHERE clause** - SELECT without WHERE causes full table scans
+2. **Verify indexed columns** - WHERE on non-indexed column = full scan
+3. **Check for LIMIT** - Unbounded queries can read entire tables
+4. **Consider caching** - High-traffic reads should use KV cache first
+5. **Cite**: `TRAP-D1-004` from COST_SENSITIVE_RESOURCES.md
+
+```
+Row Read Explosion Check:
+- Detected: D1 SELECT query in proposed code
+- Pattern: SELECT * FROM users WHERE status = 'active'
+- Index Check: ❌ No index on 'status' column
+- Warning: [STATIC:COST_WATCHLIST] TRAP-D1-004
+  Unindexed query detected. With 100K rows, each request reads 100K rows.
+  At 1K requests/day = 100M rows/day = $25/day (Free tier: 5B/month = 166M/day)
+  Recommendation:
+  1. CREATE INDEX idx_users_status ON users(status)
+  2. Add LIMIT clause: LIMIT 100
+  3. For high-traffic endpoints, use KV-Cache-First pattern
+```
+
+**KV-Cache-First Pattern Detection**:
+For high-traffic endpoints (>100 requests/minute), always suggest:
+```typescript
+// EXPENSIVE: Direct D1 read on every request
+const users = await db.prepare('SELECT * FROM users WHERE status = ?').bind('active').all();
+// 1000 req/min × 100K rows = 6B rows/hour = $1.50/hour
+
+// OPTIMIZED: KV cache with D1 fallback
+const cacheKey = `users:active:${page}`;
+let users = await env.KV.get(cacheKey, 'json');
+if (!users) {
+  users = await db.prepare('SELECT * FROM users WHERE status = ? LIMIT 100').bind('active').all();
+  await env.KV.put(cacheKey, JSON.stringify(users), { expirationTtl: 60 });
+}
+// KV reads: $0.50/M, cache hit = no D1 cost
+```
+
+### R2 Write Operations (Class A)
 If suggesting code that includes `.put()`:
 1. **Check loop context** - Is `.put()` inside a loop or frequently called handler?
 2. **Search for buffering** - Any aggregation before write?
 3. **Cite**: `TRAP-R2-001` from COST_SENSITIVE_RESOURCES.md
+
+### R2 Read Operations (Class B)
+If suggesting code that includes `.get()` for public assets:
+1. **Check caching** - Is response cached at the edge?
+2. **Check Cache-Control headers** - Are objects served with proper cache headers?
+3. **Cite**: `TRAP-R2-003` from COST_SENSITIVE_RESOURCES.md
+
+```
+R2 Class B Cost Check:
+- Detected: Public R2 bucket serving assets
+- Pattern: await bucket.get(key) in request handler
+- Caching: ❌ No Cache-Control headers, no CDN cache
+- Warning: [STATIC:COST_WATCHLIST] TRAP-R2-003
+  Every request = $0.36/M Class B operation.
+  At 10M requests/month = $3.60/month (Free tier: 10M)
+  Recommendation:
+  1. Add Cache-Control: public, max-age=31536000 for static assets
+  2. Use Cache Rules or Cache API to cache at edge
+  3. See: r2-cdn-cache pattern
+```
+
+### R2 Infrequent Access (IA) Storage Trap
+**CRITICAL WARNING**: If code or config uses R2 Infrequent Access storage class:
+
+```
+R2 IA Billing Trap Check:
+- Detected: R2 Infrequent Access storage usage
+- Warning: [STATIC:COST_WATCHLIST] TRAP-R2-004 (CRITICAL)
+  ⚠️ R2 IA has MINIMUM BILLING UNITS.
+  A single operation can incur $9.00 minimum charge.
+
+  Explanation: Cloudflare rounds up to next billing unit.
+  1 file retrieval = rounds to minimum = $9.00
+
+  Safe Usage:
+  ✅ True cold storage (backups, archives)
+  ✅ Large files (>100MB) where retrieval cost is amortized
+  ✅ Objects never accessed after upload
+
+  Dangerous Usage:
+  ❌ Any bucket with regular read operations
+  ❌ Small files that might be accessed
+  ❌ User-facing asset storage
+```
 
 ### Durable Objects Usage
 If suggesting DO architecture:
@@ -58,7 +143,10 @@ If suggesting DO architecture:
 |-----------------|-----------|-------------------|
 | Durable Objects | Any usage | "DO charges ~$0.15/GB-month storage + $0.50/M requests. Consider KV for simple key-value." |
 | R2 Class A ops | >1M/month | "R2 writes cost $4.50/M. Buffer writes or use presigned URLs for client uploads." |
+| R2 Class B ops | >10M/month | "R2 reads cost $0.36/M. For public buckets, add Cache Rules to serve from CDN (free)." |
+| R2 Infrequent Access | Any usage | "⚠️ R2 IA has minimum billing units. A single operation may incur $9.00 minimum charge." |
 | D1 Writes | >10M/month | "D1 writes cost $1/M. Detected pattern suggests >$10/mo. Batch to ≤1,000 rows." |
+| D1 Reads (unindexed) | Any unindexed query | "⚠️ Unindexed D1 query causes full table scan. 100K rows × 1K req = 100M reads/day." |
 | Workers AI (>8B) | Any usage | "Large models (Llama 11B+) cost $0.68/M tokens. Use 8B or smaller for bulk." |
 | Vectorize | >1M vectors | "Approaching 5M vector limit. Plan sharding strategy." |
 | KV Writes | >5M/month | "KV writes cost $5/M (10× reads). Consider D1 or R2 for write-heavy." |
@@ -126,6 +214,9 @@ If suggesting DO architecture:
 | BUDGET004 | Large AI model | MEDIUM | Workers AI with >8B parameter model |
 | BUDGET005 | KV write-heavy | MEDIUM | >5M KV writes/month pattern |
 | BUDGET006 | Vectorize scaling | INFO | >1M vectors - warn about 5M limit |
+| BUDGET007 | D1 row read explosion | CRITICAL | SELECT without index/LIMIT on high-traffic endpoint |
+| BUDGET008 | R2 Class B without cache | MEDIUM | Public R2 bucket reads without CDN caching |
+| BUDGET009 | R2 Infrequent Access trap | HIGH | R2 IA storage with minimum charge risk |
 
 ### Privacy Audit Rules
 

@@ -1,10 +1,10 @@
 # Cloudflare Engineer Plugin
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-v2.0.12+-purple.svg)](https://claude.com/claude-code)
 
-A Claude Code plugin that provides **Platform Architect** capabilities for designing, implementing, optimizing, and securing Cloudflare Workers applications. Now with **Loop Protection** to prevent denial-of-wallet attacks from infinite loops and runaway processes.
+A Claude Code plugin that provides **Platform Architect** capabilities for designing, implementing, optimizing, and securing Cloudflare Workers applications. Now with **Cost Awareness** (D1 row reads, R2 Class B, IA traps), **Container Support**, **Observability Export**, and **Loop Protection**.
 
 ## Quick Install
 
@@ -60,6 +60,7 @@ This plugin **proactively warns** you about cost and privacy impacts **before yo
 ## Supported Cloudflare Services
 
 - Workers (standard & Durable Objects)
+- **Containers (Beta)** - NEW in v1.4.0
 - D1 (SQLite database)
 - R2 (object storage)
 - KV (key-value store)
@@ -69,10 +70,61 @@ This plugin **proactively warns** you about cost and privacy impacts **before yo
 - Workflows (durable execution)
 - Hyperdrive (connection pooling)
 - Analytics Engine
-- **Access (Zero Trust)** - NEW
-- **Custom Hostnames (SSL for SaaS)** - NEW
-- **Stream (video delivery)** - NEW
-- **Images (transformations)** - NEW
+- Access (Zero Trust)
+- Custom Hostnames (SSL for SaaS)
+- Stream (video delivery)
+- Images (transformations)
+
+## What's New in v1.4.0
+
+### Cost Awareness Upgrade
+
+Comprehensive cost protection for the primary billing dangers facing solo developers:
+
+| Feature | Problem Solved | Guardian Rule |
+|---------|---------------|---------------|
+| **D1 Row Read Protection** | Unindexed queries causing millions of reads | BUDGET007 |
+| **R2 Class B Caching** | Public bucket reads without CDN cache | BUDGET008 |
+| **R2 IA Trap Warning** | $9 minimum charge on IA bucket reads | BUDGET009 |
+| **KV-Cache-First Pattern** | Cache D1 reads to avoid row read explosion | New pattern |
+| **R2-CDN-Cache Pattern** | Edge cache for R2 public assets | New pattern |
+
+### Workers + Assets Architecture
+
+Cloudflare has merged Pages into Workers. The plugin now:
+
+- Defaults to unified `[assets]` block for fullstack apps
+- Flags deprecated `[site]` configuration (ARCH001)
+- Scaffolds Workers + Assets for React/Vue/Svelte SPAs
+
+```jsonc
+// Modern configuration (recommended)
+{
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application"
+  }
+}
+```
+
+### Workload Router: Isolates vs Containers
+
+With Cloudflare Containers launching in 2025, the plugin now includes a decision tree:
+
+- **Use Workers (Isolates)**: Standard APIs, D1/KV/R2, AI inference
+- **Use Containers**: FFmpeg, Puppeteer, Python with native libs
+- Hybrid architecture patterns for complex workloads
+
+### Observability Export
+
+Native Cloudflare log retention is short (3-7 days). New scaffolding for:
+
+- **Axiom** (recommended free tier: 500GB/month)
+- **Better Stack / Logtail**
+- **OpenTelemetry native export**
+
+---
 
 ## What's New in v1.3.0
 

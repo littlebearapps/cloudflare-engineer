@@ -368,6 +368,79 @@ def check_cpu_limits(config: dict) -> list[dict]:
     return issues
 
 
+def check_deprecated_site_config(config: dict) -> list[dict]:
+    """Check for deprecated [site] or pages_build_output_dir configuration (NEW v1.4.0)."""
+    issues = []
+
+    # Check for deprecated [site] block
+    if "site" in config:
+        issues.append({
+            "id": "ARCH001",
+            "severity": "MEDIUM",
+            "message": "Deprecated [site] configuration detected - use [assets] instead",
+            "fix": 'Replace [site] with "assets": { "directory": "./dist", "html_handling": "auto-trailing-slash" }',
+        })
+
+    # Check for deprecated pages_build_output_dir
+    if "pages_build_output_dir" in config:
+        issues.append({
+            "id": "ARCH001",
+            "severity": "MEDIUM",
+            "message": "Deprecated pages_build_output_dir detected - use [assets] instead",
+            "fix": 'Replace with "assets": { "directory": "./dist", "not_found_handling": "single-page-application" }',
+        })
+
+    return issues
+
+
+def check_r2_infrequent_access(working_dir: str, config: dict) -> list[dict]:
+    """Check for R2 Infrequent Access storage usage with reads (NEW v1.4.0)."""
+    issues = []
+    src_dir = Path(working_dir) / "src"
+
+    if not src_dir.exists():
+        return issues
+
+    # Check if there are R2 buckets configured
+    r2_buckets = config.get("r2_buckets", [])
+    if not r2_buckets:
+        return issues
+
+    # Scan for .get() calls on R2 buckets - could indicate IA trap
+    # This is a heuristic - we can't know storage class from code
+    for ts_file in src_dir.rglob("*.ts"):
+        if "node_modules" in str(ts_file):
+            continue
+
+        try:
+            content = ts_file.read_text()
+            relative_path = ts_file.relative_to(working_dir)
+
+            # Check for R2 get operations without caching
+            if re.search(r'\.get\s*\([^)]+\)', content):
+                # Check if Cache API is used
+                has_cache = 'caches.default' in content or 'cache.match' in content.lower()
+                has_cache_control = 'Cache-Control' in content or 'cacheControl' in content
+
+                if not has_cache and not has_cache_control:
+                    # Only warn if bucket name suggests IA (cold, archive, backup, ia)
+                    for bucket in r2_buckets:
+                        bucket_name = bucket.get("bucket_name", "").lower()
+                        if any(kw in bucket_name for kw in ["cold", "archive", "backup", "ia", "infrequent"]):
+                            issues.append({
+                                "id": "BUDGET009",
+                                "severity": "HIGH",
+                                "message": f"R2 bucket '{bucket_name}' may use Infrequent Access - reads could incur $9+ minimum charge",
+                                "fix": "Use Standard storage for any bucket with read operations. IA is only safe for write-only cold storage.",
+                            })
+                            break
+
+        except Exception:
+            pass
+
+    return issues
+
+
 def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
     """Scan source code for loop-sensitive patterns that could cause billing issues."""
     issues = []
@@ -609,6 +682,9 @@ def run_audit(config: dict, working_dir: str = "") -> list[dict]:
     # Loop Safety checks (Billing Protection)
     issues.extend(check_cpu_limits(config))
 
+    # Architecture checks (NEW v1.4.0)
+    issues.extend(check_deprecated_site_config(config))
+
     if working_dir:
         # Performance Budgeter - check bundle size
         issues.extend(check_bundle_size(working_dir, config))
@@ -618,6 +694,9 @@ def run_audit(config: dict, working_dir: str = "") -> list[dict]:
 
         # Cost Simulation for detected patterns
         issues.extend(estimate_loop_cost(working_dir, config))
+
+        # R2 Infrequent Access trap detection (NEW v1.4.0)
+        issues.extend(check_r2_infrequent_access(working_dir, config))
 
     return issues
 
