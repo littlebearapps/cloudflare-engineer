@@ -123,19 +123,38 @@ def parse_jsonc(content: str) -> dict:
 
 
 def parse_toml_simple(content: str) -> dict:
-    """Simple TOML parser for wrangler configs."""
+    """Simple TOML parser for wrangler configs.
+
+    Handles both regular sections [section] and array-of-tables [[section]]
+    which is common in wrangler.toml for r2_buckets, kv_namespaces, etc.
+    """
     # This is a simplified parser - for production, use tomllib
     result = {}
     current_section = result
+    current_array_table = None  # Track current array-of-tables name
 
     for line in content.split("\n"):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
 
-        # Section header
+        # Array-of-tables header [[section]] - must check before single bracket
+        if line.startswith("[[") and line.endswith("]]"):
+            section_name = line[2:-2].strip()
+            # Initialize array if not exists
+            if section_name not in result:
+                result[section_name] = []
+            # Add new table entry to the array
+            new_entry = {}
+            result[section_name].append(new_entry)
+            current_section = new_entry
+            current_array_table = section_name
+            continue
+
+        # Regular section header [section]
         if line.startswith("[") and line.endswith("]"):
             section_name = line[1:-1].strip()
+            current_array_table = None  # Reset array table tracking
             # Handle nested sections like [vars]
             if "." in section_name:
                 parts = section_name.split(".")
@@ -155,6 +174,11 @@ def parse_toml_simple(content: str) -> dict:
             key, value = line.split("=", 1)
             key = key.strip()
             value = value.strip().strip('"').strip("'")
+            # Handle boolean values
+            if value.lower() == "true":
+                value = True
+            elif value.lower() == "false":
+                value = False
             current_section[key] = value
 
     return result
