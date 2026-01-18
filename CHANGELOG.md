@@ -5,6 +5,21 @@ All notable changes to the Cloudflare Engineer plugin will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-01-18
+
+### Added
+- **Pre-deploy hook suppression comments** - Suppress specific rules with inline comments:
+  - `// @pre-deploy-ok LOOP005` - Suppress on current/next line
+  - `// @pre-deploy-ok LOOP005 LOOP002` - Multiple rules
+  - `// @pre-deploy-ok` - Suppress all rules on that line
+- **Environment variable bypass** - `SKIP_PREDEPLOY_CHECK=1` to skip validation entirely
+
+### Changed
+- Improved recursive function detection (LOOP005) - Now skips functions with `depth`/`maxDepth`/`level` parameters
+
+### Fixed
+- TOML parser now correctly handles numeric values (was causing TypeError on cpu_ms checks)
+
 ## [1.4.0] - 2026-01-17
 
 ### Added
