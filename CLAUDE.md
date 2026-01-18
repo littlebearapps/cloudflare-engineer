@@ -2,7 +2,7 @@
 
 ## Overview
 
-Claude Code plugin providing **Platform Architect** capabilities for Cloudflare with **Cost Awareness**, **Container Support**, **Observability Export**, and **Loop Protection** (v1.4.0).
+Claude Code plugin providing **Platform Architect** capabilities for Cloudflare with **Cost Awareness**, **Container Support**, **Observability Export**, and **Loop Protection** (v1.4.1).
 
 **GitHub**: https://github.com/littlebearapps/cloudflare-engineer
 **Local**: `~/.claude/local-marketplace/cloudflare-engineer/`
@@ -85,12 +85,31 @@ mkdir -p skills/new-skill
 - Exit 2 = block
 - Print issues to stdout (parsed by Claude Code)
 
+**Bypass**: Set `SKIP_PREDEPLOY_CHECK=1` environment variable to skip validation entirely.
+
+**Suppression Comments**: Users can suppress specific rules with inline comments:
+```typescript
+// @pre-deploy-ok LOOP005        // Suppress on next line
+while (true) { /* @pre-deploy-ok LOOP007 */ }  // Inline suppression
+```
+
+**Project-Level Ignore**: Create `.pre-deploy-ignore` in project root:
+```bash
+RES001:my-queue     # Suppress for specific queue
+COST001             # Suppress globally
+LOOP001             # Allow high cpu_ms
+```
+
 **Testing**:
 ```bash
 # Test against any wrangler config
 cd /path/to/worker
 echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
   python3 ~/.claude/local-marketplace/cloudflare-engineer/hooks/pre-deploy-check.py
+
+# Test with bypass
+echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
+  SKIP_PREDEPLOY_CHECK=1 python3 ~/.claude/local-marketplace/cloudflare-engineer/hooks/pre-deploy-check.py
 ```
 
 **JSONC Parser**: Character-by-character to handle `/*` in URL patterns correctly.
@@ -178,6 +197,7 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 
 ## Version History
 
+- v1.4.1 - **Hook Suppression**: `@pre-deploy-ok` inline comments, `.pre-deploy-ignore` project file, `SKIP_PREDEPLOY_CHECK` env var bypass, BUDGET009 suppression support, improved LOOP005 depth detection, TOML parser fixes
 - v1.4.0 - **Cost Awareness + Containers + Observability**: D1 row read protection (BUDGET007, kv-cache-first pattern), R2 Class B caching (BUDGET008, r2-cdn-cache pattern), R2 IA minimum billing trap (BUDGET009), Workers + Assets architecture (ARCH001), Workload Router for Isolates vs Containers, Observability Export (Axiom/Better Stack/OTel), 2 new patterns, 4 new cost traps (11 skills, 3 agents, 4 commands, 1 hook)
 - v1.3.0 - **Loop Protection upgrade**: Billing Safety Limits in architect, new loop-breaker skill for recursion guards, Queue Safety patterns with idempotency in implement, Loop-Sensitive Resource Auditing in guardian, pre-deploy hook with loop detection and cost simulation, TRAP-LOOP-* cost traps (11 skills, 3 agents, 4 commands, 1 hook)
 - v1.2.0 - Platform Architect upgrade: Vibecoder Proactive Safeguards, Resource Discovery, Edge-Native Constraints, Performance Budgeter, zero-trust, custom-hostnames, media-streaming skills (10 skills, 3 agents, 4 commands, 1 hook)

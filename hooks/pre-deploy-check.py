@@ -33,6 +33,165 @@ def debug_log(message: str) -> None:
         pass
 
 
+def extract_suppressions(content: str) -> dict[int, set[str]]:
+    """Extract @pre-deploy-ok suppression comments from file content.
+
+    Supports formats:
+    - // @pre-deploy-ok LOOP005
+    - // @pre-deploy-ok LOOP005 LOOP002
+    - /* @pre-deploy-ok LOOP005 */
+    - // @pre-deploy-ok (suppresses all rules on next line)
+
+    Returns dict mapping line numbers to set of suppressed rule IDs.
+    A None in the set means all rules are suppressed for that line.
+    """
+    suppressions = {}
+    lines = content.split('\n')
+
+    # Pattern to match suppression comments
+    suppression_pattern = re.compile(
+        r'(?://|/\*)\s*@pre-deploy-ok(?:\s+([A-Z0-9_\s]+))?(?:\s*\*/)?',
+        re.IGNORECASE
+    )
+
+    for i, line in enumerate(lines):
+        match = suppression_pattern.search(line)
+        if match:
+            rules_str = match.group(1)
+            if rules_str:
+                # Specific rules listed
+                rules = set(r.strip().upper() for r in rules_str.split() if r.strip())
+            else:
+                # No rules = suppress all
+                rules = {None}
+
+            # Suppression applies to current line and next line
+            # (supports both inline and line-before styles)
+            suppressions[i + 1] = suppressions.get(i + 1, set()) | rules
+            suppressions[i + 2] = suppressions.get(i + 2, set()) | rules
+
+    return suppressions
+
+
+def is_suppressed(suppressions: dict[int, set[str]], line_num: int, rule_id: str) -> bool:
+    """Check if a rule is suppressed at a given line number."""
+    if line_num not in suppressions:
+        return False
+    rules = suppressions[line_num]
+    # None means all rules are suppressed
+    return None in rules or rule_id.upper() in rules
+
+
+def load_ignore_file(working_dir: str) -> dict[str, set[str]]:
+    """Load .pre-deploy-ignore file for project-level rule suppression.
+
+    File format:
+    ```
+    # Comment lines start with #
+    RES001              # Suppress RES001 globally
+    COST001             # Suppress COST001 globally
+    RES001:my-queue     # Suppress RES001 only for 'my-queue'
+    LOOP001:*           # Same as just LOOP001
+    ```
+
+    Returns dict mapping rule IDs to set of contexts (empty set = global suppression).
+    """
+    ignore_rules: dict[str, set[str]] = {}
+    ignore_path = Path(working_dir) / ".pre-deploy-ignore"
+
+    if not ignore_path.exists():
+        return ignore_rules
+
+    try:
+        content = ignore_path.read_text()
+        for line in content.split('\n'):
+            # Strip comments and whitespace
+            line = line.split('#')[0].strip()
+            if not line:
+                continue
+
+            # Parse rule:context format
+            if ':' in line:
+                rule_id, context = line.split(':', 1)
+                rule_id = rule_id.strip().upper()
+                context = context.strip()
+                if context == '*':
+                    context = ''  # Treat * as global
+            else:
+                rule_id = line.strip().upper()
+                context = ''
+
+            if rule_id:
+                if rule_id not in ignore_rules:
+                    ignore_rules[rule_id] = set()
+                if context:
+                    ignore_rules[rule_id].add(context.lower())
+                else:
+                    # Empty string means global suppression
+                    ignore_rules[rule_id].add('')
+
+        debug_log(f"Loaded .pre-deploy-ignore: {ignore_rules}")
+    except Exception as e:
+        debug_log(f"Failed to load .pre-deploy-ignore: {e}")
+
+    return ignore_rules
+
+
+def is_rule_ignored(ignore_rules: dict[str, set[str]], rule_id: str, context: str = "") -> bool:
+    """Check if a rule is ignored by .pre-deploy-ignore file.
+
+    Args:
+        ignore_rules: Dict from load_ignore_file()
+        rule_id: The rule ID to check (e.g., "RES001")
+        context: Optional context like queue name, bucket name, etc.
+
+    Returns:
+        True if the rule should be suppressed
+    """
+    rule_id = rule_id.upper()
+    if rule_id not in ignore_rules:
+        return False
+
+    contexts = ignore_rules[rule_id]
+    # Empty string in contexts means global suppression
+    if '' in contexts:
+        return True
+    # Check if specific context is suppressed
+    if context and context.lower() in contexts:
+        return True
+    return False
+
+
+def filter_ignored_issues(issues: list[dict], ignore_rules: dict[str, set[str]]) -> list[dict]:
+    """Filter out issues that are suppressed by .pre-deploy-ignore file."""
+    if not ignore_rules:
+        return issues
+
+    filtered = []
+    for issue in issues:
+        rule_id = issue.get("id", "")
+        message = issue.get("message", "")
+
+        # Extract context from message if present (e.g., queue name, bucket name)
+        context = ""
+        # Try to extract queue name
+        queue_match = re.search(r"Queue '([^']+)'", message)
+        if queue_match:
+            context = queue_match.group(1)
+        # Try to extract bucket name
+        bucket_match = re.search(r"bucket '([^']+)'", message)
+        if bucket_match:
+            context = bucket_match.group(1)
+
+        if is_rule_ignored(ignore_rules, rule_id, context):
+            debug_log(f"Ignored {rule_id} (context: {context or 'global'})")
+            continue
+
+        filtered.append(issue)
+
+    return filtered
+
+
 def is_wrangler_deploy(command: str) -> bool:
     """Check if command is a wrangler deploy command."""
     # Match various forms of wrangler deploy
@@ -141,13 +300,27 @@ def parse_toml_simple(content: str) -> dict:
         # Array-of-tables header [[section]] - must check before single bracket
         if line.startswith("[[") and line.endswith("]]"):
             section_name = line[2:-2].strip()
-            # Initialize array if not exists
-            if section_name not in result:
-                result[section_name] = []
-            # Add new table entry to the array
-            new_entry = {}
-            result[section_name].append(new_entry)
-            current_section = new_entry
+            # Handle dotted names like [[queues.consumers]]
+            if "." in section_name:
+                parts = section_name.split(".")
+                parent = result
+                for part in parts[:-1]:
+                    if part not in parent:
+                        parent[part] = {}
+                    parent = parent[part]
+                array_key = parts[-1]
+                if array_key not in parent:
+                    parent[array_key] = []
+                new_entry = {}
+                parent[array_key].append(new_entry)
+                current_section = new_entry
+            else:
+                # Simple array-of-tables
+                if section_name not in result:
+                    result[section_name] = []
+                new_entry = {}
+                result[section_name].append(new_entry)
+                current_section = new_entry
             current_array_table = section_name
             continue
 
@@ -179,6 +352,13 @@ def parse_toml_simple(content: str) -> dict:
                 value = True
             elif value.lower() == "false":
                 value = False
+            # Handle numeric values
+            elif value.isdigit():
+                value = int(value)
+            elif re.match(r'^-?\d+$', value):
+                value = int(value)
+            elif re.match(r'^-?\d+\.\d+$', value):
+                value = float(value)
             current_section[key] = value
 
     return result
@@ -440,8 +620,19 @@ def check_r2_infrequent_access(working_dir: str, config: dict) -> list[dict]:
             content = ts_file.read_text()
             relative_path = ts_file.relative_to(working_dir)
 
-            # Check for R2 get operations without caching
-            if re.search(r'\.get\s*\([^)]+\)', content):
+            # Extract suppressions from this file
+            suppressions = extract_suppressions(content)
+
+            # Find .get() calls with line numbers
+            get_pattern = re.compile(r'\.get\s*\([^)]+\)')
+            for match in get_pattern.finditer(content):
+                line_num = content[:match.start()].count('\n') + 1
+
+                # Check if this issue is suppressed
+                if is_suppressed(suppressions, line_num, "BUDGET009"):
+                    debug_log(f"Suppressed BUDGET009 at {relative_path}:{line_num}")
+                    continue
+
                 # Check if Cache API is used
                 has_cache = 'caches.default' in content or 'cache.match' in content.lower()
                 has_cache_control = 'Cache-Control' in content or 'cacheControl' in content
@@ -454,7 +645,7 @@ def check_r2_infrequent_access(working_dir: str, config: dict) -> list[dict]:
                             issues.append({
                                 "id": "BUDGET009",
                                 "severity": "HIGH",
-                                "message": f"R2 bucket '{bucket_name}' may use Infrequent Access - reads could incur $9+ minimum charge",
+                                "message": f"R2 bucket '{bucket_name}' may use Infrequent Access - reads at {relative_path}:{line_num} could incur $9+ minimum charge",
                                 "fix": "Use Standard storage for any bucket with read operations. IA is only safe for write-only cold storage.",
                             })
                             break
@@ -462,7 +653,21 @@ def check_r2_infrequent_access(working_dir: str, config: dict) -> list[dict]:
         except Exception:
             pass
 
-    return issues
+    # Deduplicate - only one warning per bucket
+    seen_buckets = set()
+    unique_issues = []
+    for issue in issues:
+        # Extract bucket name from message
+        bucket_match = re.search(r"bucket '([^']+)'", issue["message"])
+        if bucket_match:
+            bucket = bucket_match.group(1)
+            if bucket not in seen_buckets:
+                seen_buckets.add(bucket)
+                unique_issues.append(issue)
+        else:
+            unique_issues.append(issue)
+
+    return unique_issues
 
 
 def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
@@ -533,11 +738,34 @@ def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
             content = ts_file.read_text()
             relative_path = ts_file.relative_to(working_dir)
 
+            # Extract suppressions from this file
+            suppressions = extract_suppressions(content)
+
             for pattern, rule_id, severity, message, fix in loop_patterns:
                 matches = list(re.finditer(pattern, content, re.MULTILINE | re.DOTALL))
                 for match in matches:
                     # Get line number
                     line_num = content[:match.start()].count('\n') + 1
+
+                    # Check if this issue is suppressed
+                    if is_suppressed(suppressions, line_num, rule_id):
+                        debug_log(f"Suppressed {rule_id} at {relative_path}:{line_num}")
+                        continue
+
+                    # For recursive function detection (LOOP005), check for depth limiting
+                    if rule_id == "LOOP005" and "Recursive function" in message:
+                        # Get context around the match to check for depth limiting
+                        match_text = match.group(0)
+                        # Check if function has depth/maxDepth parameter or checks depth
+                        if re.search(r'(depth|maxDepth|level|count)\s*[<>=!]', match_text):
+                            continue  # Has depth check, skip
+                        # Check surrounding context (function signature and early body)
+                        start = max(0, match.start() - 50)
+                        end = min(len(content), match.end() + 200)
+                        context = content[start:end]
+                        if re.search(r'(depth|maxDepth|level)\s*[:<>=]|if\s*\(\s*(depth|maxDepth|level)', context, re.IGNORECASE):
+                            continue  # Has depth limiting, skip
+
                     issues.append({
                         "id": rule_id,
                         "severity": severity,
@@ -693,6 +921,9 @@ def run_audit(config: dict, working_dir: str = "") -> list[dict]:
     """Run all audit checks on config."""
     issues = []
 
+    # Load .pre-deploy-ignore file for project-level suppressions
+    ignore_rules = load_ignore_file(working_dir) if working_dir else {}
+
     # Security checks
     issues.extend(check_secrets_in_vars(config))
 
@@ -721,6 +952,9 @@ def run_audit(config: dict, working_dir: str = "") -> list[dict]:
 
         # R2 Infrequent Access trap detection (NEW v1.4.0)
         issues.extend(check_r2_infrequent_access(working_dir, config))
+
+    # Apply .pre-deploy-ignore suppressions
+    issues = filter_ignored_issues(issues, ignore_rules)
 
     return issues
 
@@ -777,6 +1011,11 @@ def format_issues(issues: list[dict]) -> str:
 
 def main():
     """Main hook function."""
+    # Check for environment variable bypass
+    if os.environ.get("SKIP_PREDEPLOY_CHECK", "").lower() in ("1", "true", "yes"):
+        debug_log("SKIP_PREDEPLOY_CHECK is set, bypassing validation")
+        sys.exit(0)
+
     # Read input from stdin
     try:
         raw_input = sys.stdin.read()
@@ -833,16 +1072,24 @@ def main():
     # Format and output issues
     output = format_issues(issues)
 
+    # Add suppression hint
+    suppression_hint = "\n💡 To suppress known-safe patterns:\n"
+    suppression_hint += "   • Inline: // @pre-deploy-ok RULE_ID\n"
+    suppression_hint += "   • Project: Add rule to .pre-deploy-ignore file\n"
+    suppression_hint += "   • Emergency: SKIP_PREDEPLOY_CHECK=1 npx wrangler deploy\n"
+
     if critical_count > 0:
         output += f"\n🛑 DEPLOYMENT BLOCKED: {critical_count} critical issue(s) found.\n"
         if loop_critical > 0:
             output += f"   ⚠️  {loop_critical} loop safety issue(s) could cause billing explosion.\n"
         output += "Fix critical issues before deploying.\n"
+        output += suppression_hint
         print(output, file=sys.stderr)
         sys.exit(2)  # Block deployment
     elif high_count > 0:
         output += f"\n⚠️  WARNING: {high_count} high priority issue(s) found.\n"
         output += "Consider fixing before deploying to production.\n"
+        output += suppression_hint
         print(output, file=sys.stderr)
         sys.exit(0)  # Warn but allow
     else:
