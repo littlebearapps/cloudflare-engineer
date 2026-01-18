@@ -33,6 +33,55 @@ def debug_log(message: str) -> None:
         pass
 
 
+def extract_suppressions(content: str) -> dict[int, set[str]]:
+    """Extract @pre-deploy-ok suppression comments from file content.
+
+    Supports formats:
+    - // @pre-deploy-ok LOOP005
+    - // @pre-deploy-ok LOOP005 LOOP002
+    - /* @pre-deploy-ok LOOP005 */
+    - // @pre-deploy-ok (suppresses all rules on next line)
+
+    Returns dict mapping line numbers to set of suppressed rule IDs.
+    A None in the set means all rules are suppressed for that line.
+    """
+    suppressions = {}
+    lines = content.split('\n')
+
+    # Pattern to match suppression comments
+    suppression_pattern = re.compile(
+        r'(?://|/\*)\s*@pre-deploy-ok(?:\s+([A-Z0-9_\s]+))?(?:\s*\*/)?',
+        re.IGNORECASE
+    )
+
+    for i, line in enumerate(lines):
+        match = suppression_pattern.search(line)
+        if match:
+            rules_str = match.group(1)
+            if rules_str:
+                # Specific rules listed
+                rules = set(r.strip().upper() for r in rules_str.split() if r.strip())
+            else:
+                # No rules = suppress all
+                rules = {None}
+
+            # Suppression applies to current line and next line
+            # (supports both inline and line-before styles)
+            suppressions[i + 1] = suppressions.get(i + 1, set()) | rules
+            suppressions[i + 2] = suppressions.get(i + 2, set()) | rules
+
+    return suppressions
+
+
+def is_suppressed(suppressions: dict[int, set[str]], line_num: int, rule_id: str) -> bool:
+    """Check if a rule is suppressed at a given line number."""
+    if line_num not in suppressions:
+        return False
+    rules = suppressions[line_num]
+    # None means all rules are suppressed
+    return None in rules or rule_id.upper() in rules
+
+
 def is_wrangler_deploy(command: str) -> bool:
     """Check if command is a wrangler deploy command."""
     # Match various forms of wrangler deploy
@@ -179,6 +228,13 @@ def parse_toml_simple(content: str) -> dict:
                 value = True
             elif value.lower() == "false":
                 value = False
+            # Handle numeric values
+            elif value.isdigit():
+                value = int(value)
+            elif re.match(r'^-?\d+$', value):
+                value = int(value)
+            elif re.match(r'^-?\d+\.\d+$', value):
+                value = float(value)
             current_section[key] = value
 
     return result
@@ -533,11 +589,34 @@ def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
             content = ts_file.read_text()
             relative_path = ts_file.relative_to(working_dir)
 
+            # Extract suppressions from this file
+            suppressions = extract_suppressions(content)
+
             for pattern, rule_id, severity, message, fix in loop_patterns:
                 matches = list(re.finditer(pattern, content, re.MULTILINE | re.DOTALL))
                 for match in matches:
                     # Get line number
                     line_num = content[:match.start()].count('\n') + 1
+
+                    # Check if this issue is suppressed
+                    if is_suppressed(suppressions, line_num, rule_id):
+                        debug_log(f"Suppressed {rule_id} at {relative_path}:{line_num}")
+                        continue
+
+                    # For recursive function detection (LOOP005), check for depth limiting
+                    if rule_id == "LOOP005" and "Recursive function" in message:
+                        # Get context around the match to check for depth limiting
+                        match_text = match.group(0)
+                        # Check if function has depth/maxDepth parameter or checks depth
+                        if re.search(r'(depth|maxDepth|level|count)\s*[<>=!]', match_text):
+                            continue  # Has depth check, skip
+                        # Check surrounding context (function signature and early body)
+                        start = max(0, match.start() - 50)
+                        end = min(len(content), match.end() + 200)
+                        context = content[start:end]
+                        if re.search(r'(depth|maxDepth|level)\s*[:<>=]|if\s*\(\s*(depth|maxDepth|level)', context, re.IGNORECASE):
+                            continue  # Has depth limiting, skip
+
                     issues.append({
                         "id": rule_id,
                         "severity": severity,
@@ -777,6 +856,11 @@ def format_issues(issues: list[dict]) -> str:
 
 def main():
     """Main hook function."""
+    # Check for environment variable bypass
+    if os.environ.get("SKIP_PREDEPLOY_CHECK", "").lower() in ("1", "true", "yes"):
+        debug_log("SKIP_PREDEPLOY_CHECK is set, bypassing validation")
+        sys.exit(0)
+
     # Read input from stdin
     try:
         raw_input = sys.stdin.read()
