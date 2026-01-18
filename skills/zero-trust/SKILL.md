@@ -297,3 +297,348 @@ export function requireServiceToken(env: Env) {
   };
 }
 ```
+
+---
+
+## Cloudflare Tunnel Configuration (NEW v1.5.0)
+
+### Quick Start with cloudflared
+
+Cloudflare Tunnel creates secure outbound-only connections from your infrastructure to Cloudflare, eliminating the need for public IPs or open firewall ports.
+
+**1. Install cloudflared**:
+```bash
+# macOS
+brew install cloudflared
+
+# Linux (Debian/Ubuntu)
+curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o cloudflared.deb
+sudo dpkg -i cloudflared.deb
+
+# Docker
+docker pull cloudflare/cloudflared:latest
+```
+
+**2. Authenticate**:
+```bash
+cloudflared tunnel login
+# Opens browser for Cloudflare authentication
+```
+
+**3. Create Tunnel**:
+```bash
+cloudflared tunnel create my-tunnel
+# Creates tunnel and credentials file at ~/.cloudflared/<TUNNEL_ID>.json
+```
+
+**4. Configure Tunnel** (`~/.cloudflared/config.yml`):
+```yaml
+tunnel: <TUNNEL_ID>
+credentials-file: /home/user/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  # Internal admin panel (protected by Access)
+  - hostname: admin.example.com
+    service: http://localhost:3000
+    originRequest:
+      noTLSVerify: true
+
+  # Internal API (service token auth)
+  - hostname: api-internal.example.com
+    service: http://localhost:8080
+
+  # Development server
+  - hostname: dev.example.com
+    service: http://localhost:5173
+
+  # Catch-all (required)
+  - service: http_status:404
+```
+
+**5. Run Tunnel**:
+```bash
+# Foreground (testing)
+cloudflared tunnel run my-tunnel
+
+# As systemd service (production)
+sudo cloudflared service install
+sudo systemctl enable cloudflared
+sudo systemctl start cloudflared
+```
+
+### Tunnel Patterns
+
+| Pattern | Use Case | Config |
+|---------|----------|--------|
+| **Single Service** | Expose one internal app | Single ingress rule |
+| **Multi-Service** | Route by hostname | Multiple ingress rules |
+| **Bastion** | SSH/RDP access | `ssh://` or `rdp://` service |
+| **Load Balanced** | HA across origins | Multiple replicas running cloudflared |
+| **Private Network** | Route CIDR blocks | `warp-routing.enabled: true` |
+
+### Tunnel + Access Integration
+
+```yaml
+# config.yml with Access requirements
+tunnel: <TUNNEL_ID>
+credentials-file: /path/to/creds.json
+
+ingress:
+  - hostname: admin.example.com
+    service: http://localhost:3000
+    originRequest:
+      # Access validates JWT before traffic reaches origin
+      # No additional auth needed in application
+      access:
+        required: true
+        teamName: my-team
+  - service: http_status:404
+```
+
+---
+
+## Access Policy Generator (NEW v1.5.0)
+
+### Admin Route Protection (Email OTP)
+
+Protect admin panels with email-based one-time passwords.
+
+**Terraform**:
+```hcl
+resource "cloudflare_access_application" "admin" {
+  zone_id          = var.zone_id
+  name             = "Admin Panel"
+  domain           = "admin.example.com"
+  type             = "self_hosted"
+  session_duration = "4h"  # Short for admin access
+
+  # Require fresh auth for sensitive actions
+  allowed_idps = ["email"]  # Force email OTP only
+}
+
+resource "cloudflare_access_policy" "admin_email_otp" {
+  application_id = cloudflare_access_application.admin.id
+  zone_id        = var.zone_id
+  name           = "Admin Email OTP"
+  precedence     = 1
+  decision       = "allow"
+
+  include {
+    email = [
+      "admin@company.com",
+      "cto@company.com"
+    ]
+  }
+
+  require {
+    # Force email OTP verification
+    login_method = { id = "otp" }
+  }
+}
+```
+
+### Jobs/Cron Route Protection (Service Token)
+
+Protect scheduled job endpoints with service tokens for machine-to-machine auth.
+
+**Terraform**:
+```hcl
+resource "cloudflare_access_application" "jobs" {
+  zone_id          = var.zone_id
+  name             = "Job Runner"
+  domain           = "jobs.example.com"
+  type             = "self_hosted"
+  session_duration = "24h"
+}
+
+resource "cloudflare_access_service_token" "jobs_token" {
+  zone_id = var.zone_id
+  name    = "Job Runner Service Token"
+}
+
+resource "cloudflare_access_policy" "jobs_service_token" {
+  application_id = cloudflare_access_application.jobs.id
+  zone_id        = var.zone_id
+  name           = "Service Token Access"
+  precedence     = 1
+  decision       = "non_identity"  # Machine auth, no user identity
+
+  include {
+    service_token = [cloudflare_access_service_token.jobs_token.id]
+  }
+}
+
+# Output credentials for CI/CD
+output "job_runner_client_id" {
+  value     = cloudflare_access_service_token.jobs_token.client_id
+  sensitive = true
+}
+
+output "job_runner_client_secret" {
+  value     = cloudflare_access_service_token.jobs_token.client_secret
+  sensitive = true
+}
+```
+
+**CI/CD Usage**:
+```bash
+# GitHub Actions example
+curl -X POST https://jobs.example.com/run \
+  -H "CF-Access-Client-Id: ${{ secrets.JOB_CLIENT_ID }}" \
+  -H "CF-Access-Client-Secret: ${{ secrets.JOB_CLIENT_SECRET }}" \
+  -H "Content-Type: application/json" \
+  -d '{"job": "nightly-backup"}'
+```
+
+### Combined Admin + Service Token Pattern
+
+```hcl
+# Single application with multiple policies
+resource "cloudflare_access_application" "api_admin" {
+  zone_id          = var.zone_id
+  name             = "API Admin Routes"
+  domain           = "api.example.com/admin/*"
+  type             = "self_hosted"
+  session_duration = "4h"
+}
+
+# Policy 1: Human admin access (email OTP)
+resource "cloudflare_access_policy" "admin_humans" {
+  application_id = cloudflare_access_application.api_admin.id
+  zone_id        = var.zone_id
+  name           = "Admin Humans"
+  precedence     = 1
+  decision       = "allow"
+
+  include {
+    email_domain = ["company.com"]
+  }
+
+  require {
+    login_method = { id = "otp" }
+  }
+}
+
+# Policy 2: Automated tools (service token)
+resource "cloudflare_access_policy" "admin_automation" {
+  application_id = cloudflare_access_application.api_admin.id
+  zone_id        = var.zone_id
+  name           = "Admin Automation"
+  precedence     = 2
+  decision       = "non_identity"
+
+  include {
+    service_token = [cloudflare_access_service_token.admin_automation.id]
+  }
+}
+```
+
+---
+
+## Admin Panel Protection Checklist (NEW v1.5.0)
+
+Use this checklist when auditing admin routes:
+
+### Authentication
+- [ ] Access application exists for admin routes
+- [ ] Short session duration (≤4h for admin, ≤1h for super-admin)
+- [ ] MFA/OTP required (not just email domain)
+- [ ] Service tokens used for automation (not hardcoded creds)
+
+### Authorization
+- [ ] Least privilege: separate policies for different admin roles
+- [ ] IP restrictions for super-admin actions (optional)
+- [ ] Geographic restrictions if applicable
+
+### Audit & Monitoring
+- [ ] Access logs enabled
+- [ ] Alerts configured for failed auth attempts
+- [ ] Regular access review (quarterly)
+- [ ] Service token rotation schedule
+
+### Code-Level Checks
+- [ ] No hardcoded credentials in source
+- [ ] Service token IDs/secrets in environment variables only
+- [ ] Admin routes not exposed on public API documentation
+- [ ] Rate limiting on admin endpoints
+
+---
+
+## Extended Validation Rules (NEW v1.5.0)
+
+| ID | Severity | Check |
+|----|----------|-------|
+| ZT001 | CRITICAL | Staging without Access |
+| ZT002 | CRITICAL | Dev environment exposed |
+| ZT003 | HIGH | Preview deploys public |
+| ZT004 | CRITICAL | Admin routes unprotected |
+| ZT005 | HIGH | Internal APIs no service token |
+| ZT006 | MEDIUM | Weak session duration |
+| ZT007 | LOW | No geographic restriction |
+| ZT008 | MEDIUM | Missing bypass audit |
+| **ZT009** | **CRITICAL** | /jobs/* route without service token auth |
+| **ZT010** | **HIGH** | Admin uses password-only (no OTP/MFA) |
+| **ZT011** | **CRITICAL** | Service token credentials hardcoded |
+| **ZT012** | **MEDIUM** | Admin session > 4h |
+
+### ZT009: Jobs Route Without Service Token
+
+**Pattern**: Scheduled job endpoints accessible without machine auth.
+
+**Detection**:
+- Routes matching `/jobs/*`, `/cron/*`, `/scheduled/*`
+- No `CF-Access-Client-Id` header validation
+- No Access application with service token policy
+
+**Risk**: Attackers can trigger jobs, potentially causing data corruption or resource exhaustion.
+
+**Fix**: Add Access application with service token policy (see generator above).
+
+### ZT010: Admin Without MFA
+
+**Pattern**: Admin routes protected only by email domain, no OTP/MFA requirement.
+
+**Detection**:
+- Access policy with `email_domain` include but no `login_method` require
+- Admin routes without Access (falls back to app-level password auth)
+
+**Risk**: Compromised email = full admin access.
+
+**Fix**: Add `require { login_method = { id = "otp" } }` to policy.
+
+### ZT011: Hardcoded Service Token Credentials
+
+**Pattern**: Service token client ID/secret in source code.
+
+**Detection**:
+```bash
+# Grep patterns
+grep -r "CF-Access-Client-Id.*[a-f0-9]{32}" .
+grep -r "CF-Access-Client-Secret.*[a-f0-9]{64}" .
+```
+
+**Risk**: Credentials in git history, exposed in logs.
+
+**Fix**: Move to environment variables, use secrets manager.
+
+### ZT012: Long Admin Sessions
+
+**Pattern**: Admin Access application with `session_duration > 4h`.
+
+**Detection**: Check Access application configuration.
+
+**Risk**: Longer sessions = longer window for session hijacking.
+
+**Fix**: Set `session_duration = "4h"` or shorter for admin apps.
+
+---
+
+## Related Skills
+
+- **architect**: Overall architecture including Access integration
+- **guardian**: Security auditing across all Cloudflare services
+- **loop-breaker**: Preventing service token abuse in loops
+
+---
+
+*Extended in v1.5.0 - Tunnel Config, Access Policy Generator, Admin Protection*

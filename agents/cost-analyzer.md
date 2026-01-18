@@ -289,3 +289,180 @@ When cost issues are identified:
 3. **Tag with provenance**:
    - `[STATIC:COST_WATCHLIST]` when detected via code analysis
    - `[LIVE-VALIDATED:COST_WATCHLIST]` when confirmed by metrics
+
+---
+
+## R2 Class B Cost Protection (NEW v1.5.0)
+
+R2 Class B operations (reads) cost $0.36/million. Without edge caching, every request to R2 incurs a Class B charge. This section provides analysis patterns to detect and prevent R2 cost explosions.
+
+### Architecture Checks
+
+**1. Public Bucket Without CDN**
+
+Flag R2 buckets with public access enabled but no Cache Rules or CDN configuration.
+
+```javascript
+// Check R2 bucket list
+mcp__cloudflare-bindings__r2_buckets_list()
+
+// For each bucket, check:
+// 1. Is it configured for public access (custom domain or r2.dev)?
+// 2. Does the zone have Cache Rules for R2 objects?
+// 3. Is there a Worker with caching in front?
+```
+
+**Detection Pattern**:
+```
+Public bucket indicators:
+- Custom domain pointing to R2
+- r2.dev domain enabled
+- Public read via presigned URLs at high volume
+
+Missing cache indicators:
+- No Cache Rule matching R2 asset paths
+- No caches.default.match() in Worker code
+- Cache-Control: no-cache or no-store on R2 objects
+```
+
+**2. R2.get() Without Cache Wrapper**
+
+Scan code for R2 read operations that bypass edge cache.
+
+```javascript
+// Pattern: Direct R2.get() on hot paths
+const object = await env.R2_BUCKET.get(key);  // EXPENSIVE
+
+// Pattern: Should use caches.default
+const cache = caches.default;
+const cacheKey = new Request(`https://cache/${key}`);
+let response = await cache.match(cacheKey);
+if (!response) {
+  const object = await env.R2_BUCKET.get(key);
+  if (object) {
+    response = new Response(object.body, {
+      headers: { 'Cache-Control': 'public, max-age=86400' }
+    });
+    ctx.waitUntil(cache.put(cacheKey, response.clone()));
+  }
+}
+```
+
+**Grep Patterns**:
+```bash
+# Find uncached R2 reads
+grep -rn "\.get\s*(" --include="*.ts" | grep -v "cache\."
+grep -rn "R2.*\.get\(" --include="*.ts"
+
+# Check for cache wrapper presence
+grep -rn "caches\.default" --include="*.ts"
+```
+
+### Code Scan Validation Rules
+
+| ID | Severity | Pattern | Description |
+|----|----------|---------|-------------|
+| R2002 | MEDIUM | `R2.get()` without cache wrapper | R2 read on request path without edge caching |
+| R2003 | HIGH | `R2.put()` in loop | Potential write flood (Class A operations) |
+
+**R2002 Detection**:
+```javascript
+// EXPENSIVE: Every request = 1 Class B operation
+app.get('/image/:id', async (c) => {
+  const object = await c.env.IMAGES.get(c.req.param('id'));
+  return new Response(object?.body);
+});
+
+// OPTIMIZED: Cache first, R2 only on miss
+app.get('/image/:id', async (c) => {
+  const cache = caches.default;
+  const cacheKey = new Request(c.req.url);
+
+  let response = await cache.match(cacheKey);
+  if (response) return response;  // Free (edge cache hit)
+
+  const object = await c.env.IMAGES.get(c.req.param('id'));
+  if (!object) return c.notFound();
+
+  response = new Response(object.body, {
+    headers: {
+      'Content-Type': object.httpMetadata?.contentType || 'application/octet-stream',
+      'Cache-Control': 'public, max-age=86400',
+      'ETag': object.etag,
+    }
+  });
+
+  c.executionCtx.waitUntil(cache.put(cacheKey, response.clone()));
+  return response;
+});
+```
+
+**R2003 Detection**:
+```javascript
+// EXPENSIVE: N Class A operations
+for (const item of items) {
+  await env.BUCKET.put(`data/${item.id}`, JSON.stringify(item));  // BAD
+}
+
+// OPTIMIZED: Batch or use different storage
+// For small items: Consider KV or D1
+// For batch uploads: Use multipart upload API
+```
+
+### Usage Alerts
+
+**Billing Notification Recommendation**:
+
+When R2 usage exceeds thresholds, recommend:
+1. Enable Usage-Based Billing notifications in Cloudflare dashboard
+2. Set alert at 50% of expected monthly budget
+3. Configure weekly usage reports
+
+**Threshold Alerts**:
+```
+Alert if:
+- Class B ops > 10M/day without cache layer
+- Class A ops > 1M/day (potential write flood)
+- Storage growth > 50GB/week unexpected
+- Single object accessed > 100K times/day (should be cached)
+```
+
+### R2 Cost Trap Reference
+
+When R2 cost issues detected, cite these from COST_SENSITIVE_RESOURCES.md:
+
+| Trap ID | Severity | Pattern | Fix |
+|---------|----------|---------|-----|
+| TRAP-R2-005 | HIGH | Public bucket without CDN | Add Cache Rules or caches.default wrapper |
+| TRAP-R2-006 | MEDIUM | Uncached R2.get() on hot path | Implement r2-cdn-cache pattern |
+
+### R2 Analysis Output Format
+
+```markdown
+## R2 Cost Analysis
+
+### [STATIC] Uncached R2 Reads Detected
+- **Pattern**: R2.get() without cache wrapper (R2002)
+- **Files**: src/routes/images.ts:45, src/routes/files.ts:23
+- **Estimated Impact**: 1M requests/month × $0.36/M = $0.36/month
+- **Risk**: Scales linearly with traffic
+
+### [LIVE-VALIDATED] Public Bucket Without Edge Cache
+- **Bucket**: user-uploads
+- **Public Access**: r2.dev domain enabled
+- **Cache Status**: No Cache Rules detected
+- **Traffic**: 500K requests/day
+- **Monthly Cost**: 15M × $0.36/M = $5.40/month
+- **With Caching**: ~$0.05/month (98% cache hit expected)
+- **Potential Savings**: $5.35/month
+
+### Recommendations
+1. [ ] [R2002] Add caches.default wrapper to image handler
+2. [ ] [TRAP-R2-005] Create Cache Rule for user-uploads bucket
+3. [ ] Enable Usage-Based Billing notifications
+```
+
+### Related Patterns
+
+- **r2-cdn-cache**: Edge caching pattern for R2 objects (@skills/patterns/r2-cdn-cache.md)
+- **kv-cache-first**: D1 + KV caching, similar pattern applies to R2 (@skills/patterns/kv-cache-first.md)

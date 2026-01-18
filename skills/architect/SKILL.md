@@ -153,20 +153,79 @@ Does your workload require OS-level dependencies?
          Workflows: Step-based, automatic retry/resume
 ```
 
-### Comparison: Workers (Isolates) vs Containers
+### Comparison: Workers (JS) vs Python Workers vs Containers
 
-| Aspect | Workers (Isolates) | Containers (Beta) |
-|--------|-------------------|-------------------|
-| **Startup** | ~0ms (instant) | ~seconds (cold start) |
-| **Memory** | 128MB | Configurable (256MB-4GB) |
-| **CPU Time** | 30s max | Configurable (minutes-hours) |
-| **Runtime** | V8 isolate (JS/WASM) | Full Linux container |
-| **File System** | ❌ No (use R2) | ✅ Yes (ephemeral) |
-| **Native Binaries** | ❌ No | ✅ Yes |
-| **Network** | fetch() only | Full TCP/UDP |
-| **Cost** | $0.30/M requests | Per-second billing |
-| **Scale** | Instant, global | Regional, warm pools |
-| **Best For** | APIs, web, serverless | Heavy compute, native deps |
+| Aspect | Workers (JS/TS) | Python Workers | Containers (Beta) |
+|--------|-----------------|----------------|-------------------|
+| **Startup** | ~0ms (instant) | ~50-100ms | ~seconds (cold start) |
+| **Memory** | 128MB | 128MB | Configurable (256MB-4GB) |
+| **CPU Time** | 30s max | 30s max | Configurable (minutes-hours) |
+| **Runtime** | V8 isolate | Pyodide (WASM) | Full Linux container |
+| **File System** | ❌ No (use R2) | ❌ No (use R2) | ✅ Yes (ephemeral) |
+| **Native Binaries** | ❌ No | ❌ Pure Python only | ✅ Yes |
+| **Packages** | npm (bundled) | micropip (limited) | pip (full) |
+| **Network** | fetch() only | fetch() only | Full TCP/UDP |
+| **Cost** | $0.30/M requests | $0.30/M requests | Per-second billing |
+| **Scale** | Instant, global | Instant, global | Regional, warm pools |
+| **Best For** | APIs, web, serverless | Python scripts, AI | Heavy compute, native deps |
+
+### Python Workers Decision Tree (NEW v1.5.0)
+
+Python Workers run via Pyodide (Python compiled to WebAssembly). They have access to many pure-Python packages but cannot use native extensions.
+
+```
+Is your workload Python-based?
+│
+├─ NO: Use JavaScript/TypeScript Workers (faster startup)
+│
+└─ YES: Does it require native Python extensions?
+    │
+    ├─ NO: Does it need packages from PyPI?
+    │   │
+    │   ├─ YES: Are they pure Python packages?
+    │   │   │
+    │   │   ├─ YES: Use Python Workers ✅
+    │   │   │       ✅ requests, httpx (use fetch instead)
+    │   │   │       ✅ pydantic, dataclasses
+    │   │   │       ✅ json, re, datetime, typing
+    │   │   │       ✅ langchain (core only)
+    │   │   │       ✅ openai, anthropic SDKs
+    │   │   │
+    │   │   └─ NO: Use Containers
+    │   │           ❌ numpy, pandas, scipy
+    │   │           ❌ tensorflow, pytorch
+    │   │           ❌ opencv-python
+    │   │           ❌ psycopg2 (use HTTP APIs)
+    │   │
+    │   └─ NO: Use Python Workers with stdlib ✅
+    │
+    └─ YES: Use Containers
+            ❌ Any C extension module
+            ❌ Cython packages
+            ❌ Binary wheels
+```
+
+### Incompatible Libraries (Require Containers)
+
+These popular libraries **cannot** run in Workers (JS or Python) due to native dependencies:
+
+| Library | Category | Alternative on Workers |
+|---------|----------|----------------------|
+| `sharp` | Image processing | Cloudflare Images API |
+| `puppeteer` | Headless browser | Browser Rendering API |
+| `playwright` | Browser automation | Browser Rendering API |
+| `ffmpeg` | Video processing | Cloudflare Stream |
+| `numpy` | Numerical computing | Pure Python math / WASM libs |
+| `pandas` | Data analysis | Pure Python / process in Container |
+| `scipy` | Scientific computing | Containers only |
+| `tensorflow` | ML inference | Workers AI (hosted models) |
+| `pytorch` | ML inference | Workers AI (hosted models) |
+| `opencv-python` | Computer vision | Cloudflare Images + Containers |
+| `psycopg2` | PostgreSQL driver | Hyperdrive + HTTP |
+| `mysqlclient` | MySQL driver | Hyperdrive + HTTP |
+| `bcrypt` | Password hashing | `bcryptjs` (pure JS) |
+
+**Rule of Thumb**: If `pip install` compiles C code or downloads a binary wheel, it won't work in Python Workers.
 
 ### Container Configuration (When Needed)
 
@@ -564,6 +623,28 @@ export default app;
 | Static-only site | ✅ Workers + Assets (simpler than Pages) |
 | API-only backend | Use Worker without assets block |
 | Complex multi-site | Consider separate Workers with service bindings |
+
+### Pages vs Workers Migration Triggers (NEW v1.5.0)
+
+| Current Situation | Recommendation | Rationale |
+|-------------------|----------------|-----------|
+| **New project** | Workers + Assets | Modern default, unified deployment |
+| **Existing Pages, no issues** | Keep Pages | Migration effort not justified |
+| **Pages + separate API Worker** | Migrate to Workers + Assets | Consolidate into single deployment |
+| **Pages with Preview Deploys** | Keep Pages (for now) | Preview feature coming to Workers |
+| **Pages hitting function limits** | Migrate to Workers + Assets | Workers have higher limits |
+| **Need Service Bindings** | Migrate to Workers + Assets | Pages Functions can't use Service Bindings |
+| **Need Durable Objects** | Migrate to Workers + Assets | Pages Functions can't use DOs |
+
+**Migration Path**:
+
+1. Convert `functions/` directory to `src/` with Hono router
+2. Replace `_middleware.ts` with Hono middleware
+3. Add `assets` block to wrangler.jsonc pointing to build output
+4. Update CI/CD from `wrangler pages deploy` to `wrangler deploy`
+5. Test Preview Deploys manually until Workers gets native support
+
+---
 
 ## Architecture Templates
 

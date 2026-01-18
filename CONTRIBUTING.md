@@ -194,12 +194,17 @@ When adding new validation rules to the pre-deploy hook:
 | PRIV | Privacy | PRIV001 - PII in logs |
 | ZT | Zero Trust | ZT001 - Staging without Access |
 | LOOP | Loop Safety (Billing) | LOOP001 - Missing cpu_ms limit |
+| QUERY | Query Optimization | QUERY001 - SELECT * without LIMIT |
+| OBS | Observability | OBS001 - Logs not enabled |
 
-Current BUDGET rules (v1.4.0):
+Current rules (v1.5.0):
 - BUDGET001-006: Original budget enforcement triggers
 - BUDGET007: D1 row read explosion (unindexed queries)
 - BUDGET008: R2 Class B without edge caching
 - BUDGET009: R2 Infrequent Access with read operations
+- QUERY001-005: D1 query optimization (SELECT *, N+1, Drizzle)
+- OBS001-003: Observability configuration (logs, export, sampling)
+- ZT009-012: Zero Trust admin protection (tunnels, tokens)
 
 Severity levels:
 - **CRITICAL**: Blocks deploy, security risk, or billing explosion risk (includes LOOP*, BUDGET007)

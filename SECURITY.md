@@ -4,8 +4,9 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 1.5.x   | :white_check_mark: |
 | 1.4.x   | :white_check_mark: |
-| 1.3.x   | :white_check_mark: |
+| 1.3.x   | :x:                |
 | 1.2.x   | :x:                |
 | 1.1.x   | :x:                |
 | 1.0.x   | :x:                |
@@ -92,3 +93,21 @@ These features help prevent accidental billing explosions from:
 - R2 Infrequent Access storage with read operations (minimum billing trap)
 
 See [COST_SENSITIVE_RESOURCES.md](COST_SENSITIVE_RESOURCES.md) for detailed documentation of cost traps.
+
+## Query Optimization & Privacy (v1.5.0+)
+
+The plugin includes **Query Optimization** to protect against D1 billing traps:
+
+- **QUERY001-005** - Detects unbounded SELECT *, N+1 queries, and Drizzle ORM anti-patterns
+- **TRAP-D1-005, TRAP-D1-006** - Cost traps for query patterns that read excess rows
+
+The plugin also includes **Privacy Filters** for logging:
+
+- **TRAP-PRIVACY-001** - Logging Authorization headers (CRITICAL)
+- **TRAP-PRIVACY-002** - Logging PII like email, phone (HIGH)
+- **TRAP-PRIVACY-003** - Logging financial data like credit cards (CRITICAL)
+
+These features help prevent:
+- D1 queries reading entire tables instead of indexed rows
+- Accidental exposure of credentials in external logs
+- PII and financial data leakage through observability pipelines
