@@ -85,12 +85,24 @@ mkdir -p skills/new-skill
 - Exit 2 = block
 - Print issues to stdout (parsed by Claude Code)
 
+**Bypass**: Set `SKIP_PREDEPLOY_CHECK=1` environment variable to skip validation entirely.
+
+**Suppression Comments**: Users can suppress specific rules with inline comments:
+```typescript
+// @pre-deploy-ok LOOP005        // Suppress on next line
+while (true) { /* @pre-deploy-ok LOOP007 */ }  // Inline suppression
+```
+
 **Testing**:
 ```bash
 # Test against any wrangler config
 cd /path/to/worker
 echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
   python3 ~/.claude/local-marketplace/cloudflare-engineer/hooks/pre-deploy-check.py
+
+# Test with bypass
+echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
+  SKIP_PREDEPLOY_CHECK=1 python3 ~/.claude/local-marketplace/cloudflare-engineer/hooks/pre-deploy-check.py
 ```
 
 **JSONC Parser**: Character-by-character to handle `/*` in URL patterns correctly.

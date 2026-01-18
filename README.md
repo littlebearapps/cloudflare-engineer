@@ -197,6 +197,35 @@ Automatically validates `wrangler.toml` before deployment:
 
 **CRITICAL issues block deployment.** This includes loop safety and cost issues that could cause billing explosions.
 
+### Suppressing Warnings
+
+For known-safe patterns, use inline comments to suppress specific rules:
+
+```typescript
+// @pre-deploy-ok LOOP005
+async function traverse(node: Node, depth = 0) {
+  if (depth > 10) return;  // Has depth limit - safe
+  for (const child of node.children) {
+    await traverse(child, depth + 1);
+  }
+}
+
+while (true) { // @pre-deploy-ok LOOP007
+  // Controlled loop with break condition
+  if (shouldStop) break;
+}
+```
+
+Supported formats:
+- `// @pre-deploy-ok LOOP005` - Suppress specific rule
+- `// @pre-deploy-ok LOOP005 LOOP002` - Multiple rules
+- `// @pre-deploy-ok` - Suppress all rules on that line
+
+To bypass validation entirely (emergency deploys):
+```bash
+SKIP_PREDEPLOY_CHECK=1 npx wrangler deploy
+```
+
 ### Performance Budgeter
 
 The hook estimates bundle size and warns about tier limits:
