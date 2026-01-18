@@ -221,6 +221,22 @@ Supported formats:
 - `// @pre-deploy-ok LOOP005 LOOP002` - Multiple rules
 - `// @pre-deploy-ok` - Suppress all rules on that line
 
+### Project-Level Suppression
+
+Create a `.pre-deploy-ignore` file in your project root for config-level rules:
+
+```bash
+# .pre-deploy-ignore
+RES001:my-queue     # Suppress DLQ warning only for my-queue
+COST001             # Suppress high retry warnings globally
+RES002              # Suppress max_concurrency warnings globally
+LOOP001             # We need high cpu_ms for this worker
+```
+
+Format: `RULE_ID` or `RULE_ID:context` (context = queue name, bucket name, etc.)
+
+### Emergency Bypass
+
 To bypass validation entirely (emergency deploys):
 ```bash
 SKIP_PREDEPLOY_CHECK=1 npx wrangler deploy

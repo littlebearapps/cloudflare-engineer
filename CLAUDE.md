@@ -93,6 +93,13 @@ mkdir -p skills/new-skill
 while (true) { /* @pre-deploy-ok LOOP007 */ }  // Inline suppression
 ```
 
+**Project-Level Ignore**: Create `.pre-deploy-ignore` in project root:
+```bash
+RES001:my-queue     # Suppress for specific queue
+COST001             # Suppress globally
+LOOP001             # Allow high cpu_ms
+```
+
 **Testing**:
 ```bash
 # Test against any wrangler config
@@ -190,7 +197,7 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 
 ## Version History
 
-- v1.4.1 - **Hook Suppression**: `@pre-deploy-ok` inline comments for suppressing specific rules, `SKIP_PREDEPLOY_CHECK` env var bypass, improved LOOP005 detection for depth-limited recursion, TOML numeric parsing fix
+- v1.4.1 - **Hook Suppression**: `@pre-deploy-ok` inline comments, `.pre-deploy-ignore` project file, `SKIP_PREDEPLOY_CHECK` env var bypass, BUDGET009 suppression support, improved LOOP005 depth detection, TOML parser fixes
 - v1.4.0 - **Cost Awareness + Containers + Observability**: D1 row read protection (BUDGET007, kv-cache-first pattern), R2 Class B caching (BUDGET008, r2-cdn-cache pattern), R2 IA minimum billing trap (BUDGET009), Workers + Assets architecture (ARCH001), Workload Router for Isolates vs Containers, Observability Export (Axiom/Better Stack/OTel), 2 new patterns, 4 new cost traps (11 skills, 3 agents, 4 commands, 1 hook)
 - v1.3.0 - **Loop Protection upgrade**: Billing Safety Limits in architect, new loop-breaker skill for recursion guards, Queue Safety patterns with idempotency in implement, Loop-Sensitive Resource Auditing in guardian, pre-deploy hook with loop detection and cost simulation, TRAP-LOOP-* cost traps (11 skills, 3 agents, 4 commands, 1 hook)
 - v1.2.0 - Platform Architect upgrade: Vibecoder Proactive Safeguards, Resource Discovery, Edge-Native Constraints, Performance Budgeter, zero-trust, custom-hostnames, media-streaming skills (10 skills, 3 agents, 4 commands, 1 hook)

@@ -12,13 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `// @pre-deploy-ok LOOP005` - Suppress on current/next line
   - `// @pre-deploy-ok LOOP005 LOOP002` - Multiple rules
   - `// @pre-deploy-ok` - Suppress all rules on that line
+- **Project-level `.pre-deploy-ignore` file** - Suppress config-level rules:
+  - `RULE_ID` - Suppress rule globally
+  - `RULE_ID:context` - Suppress for specific queue/bucket name
 - **Environment variable bypass** - `SKIP_PREDEPLOY_CHECK=1` to skip validation entirely
+- **Suppression hint in output** - Shows suppression options when issues are found
+- **BUDGET009 inline suppression** - R2 IA warnings can now be suppressed with `@pre-deploy-ok`
 
 ### Changed
 - Improved recursive function detection (LOOP005) - Now skips functions with `depth`/`maxDepth`/`level` parameters
 
 ### Fixed
 - TOML parser now correctly handles numeric values (was causing TypeError on cpu_ms checks)
+- TOML parser now correctly handles dotted array-of-tables like `[[queues.consumers]]`
 
 ## [1.4.0] - 2026-01-17
 
