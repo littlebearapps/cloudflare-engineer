@@ -1,7 +1,7 @@
 {
   "name": "cloudflare-engineer",
-  "version": "1.4.1",
-  "description": "Platform Architect capabilities for Cloudflare - architecture design with Workers + Assets, Isolates vs Containers decision tree, D1 row read protection, R2 Class B caching, observability export (Axiom/Better Stack), Loop Protection, and billing safety. Includes Edge-Native Constraints, Vibecoder Proactive Safeguards, Zero Trust, SSL for SaaS, media streaming patterns, recursion guards, queue safety, and cost simulation.",
+  "version": "1.5.0",
+  "description": "Platform Architect capabilities for Cloudflare - D1 Query Optimization, Cloudflare Workflows, External Logging (Axiom/Better Stack), Python Workers, Zero Trust Tooling, and R2 Cost Protection. Includes Edge-Native Constraints, Vibecoder Proactive Safeguards, Loop Protection, billing safety, recursion guards, queue safety, Privacy Filters, and cost simulation.",
   "author": {
     "name": "Little Bear Apps",
     "email": "hello@littlebearapps.com"
@@ -32,6 +32,14 @@
     "containers",
     "observability",
     "opentelemetry",
-    "assets"
+    "assets",
+    "query-optimizer",
+    "workflows",
+    "external-logging",
+    "axiom",
+    "betterstack",
+    "python-workers",
+    "privacy",
+    "tunnel"
   ]
 }

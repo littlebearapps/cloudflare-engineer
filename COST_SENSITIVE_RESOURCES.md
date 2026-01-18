@@ -136,6 +136,74 @@ if (!users) {
 
 ---
 
+#### TRAP-D1-005: Unbounded SELECT * (HIGH) - NEW v1.5.0
+
+**Pattern**: SELECT * without LIMIT on tables that grow over time. Combined with missing index, this is a billing explosion waiting to happen.
+
+```typescript
+// EXPENSIVE: Fetches ALL rows, ALL columns
+app.get('/api/products', async (c) => {
+  const products = await db.prepare('SELECT * FROM products').all();
+  return c.json(products);
+});
+// With 50K products:
+// - Each request reads 50K rows × all columns
+// - 100 requests/day = 5M rows read = free tier limit
+
+// OPTIMIZED: Pagination + column selection
+app.get('/api/products', async (c) => {
+  const page = parseInt(c.req.query('page') || '1');
+  const limit = 20;
+  const offset = (page - 1) * limit;
+
+  const products = await db.prepare(
+    'SELECT id, name, price FROM products ORDER BY id LIMIT ? OFFSET ?'
+  ).bind(limit, offset).all();
+
+  return c.json(products);
+});
+// Each request reads 20 rows = sustainable at any scale
+```
+
+**Detection**:
+- `[STATIC]`: `SELECT * FROM` without `LIMIT` clause
+- `[STATIC]`: List endpoint handler without pagination parameters
+- `[LIVE-VALIDATED]`: Row reads >> expected result set size
+
+**Guardian Rule**: `QUERY001`
+
+---
+
+#### TRAP-D1-006: Drizzle findMany Without Limit (MEDIUM) - NEW v1.5.0
+
+**Pattern**: Drizzle ORM's `findMany()` and `.all()` without `.limit()` return entire tables.
+
+```typescript
+// EXPENSIVE: ORM hides the unbounded query
+const users = await db.query.users.findMany();  // ALL users
+const posts = await db.select().from(posts);     // ALL posts
+
+// OPTIMIZED: Always specify limits
+const users = await db.query.users.findMany({
+  limit: 100,
+  where: eq(users.status, 'active'),
+});
+
+const posts = await db.select()
+  .from(posts)
+  .where(eq(posts.published, true))
+  .limit(50);
+```
+
+**Detection**:
+- `[STATIC]`: `findMany()` without `limit:` option
+- `[STATIC]`: `.all()` without preceding `.limit()`
+- `[LIVE-VALIDATED]`: Drizzle query row counts
+
+**Guardian Rule**: `QUERY005`
+
+---
+
 ## R2 (Object Storage)
 
 ### Pricing Model (2026)
@@ -292,6 +360,114 @@ const config = await standardBucket.get('small-config.json');
 - `[LIVE-VALIDATED]`: IA retrieval charges appearing in billing
 
 **Guardian Rule**: `BUDGET009`
+
+---
+
+#### TRAP-R2-005: Public Bucket Without CDN (HIGH) - NEW v1.5.0
+
+**Pattern**: R2 bucket with public access (custom domain or r2.dev) but no Cache Rules or CDN configuration. Every visitor request = Class B operation.
+
+```typescript
+// EXPENSIVE: Public bucket, no caching layer
+// wrangler.jsonc or dashboard config:
+// - Custom domain: assets.example.com → R2 bucket
+// - No Cache Rules configured
+// - No Worker with caches.default in front
+
+// Every image request:
+// 10K visitors/day × 10 images/page = 100K Class B ops/day
+// 3M ops/month = $1.08/month (exceeds 10M free tier threshold quickly)
+
+// OPTIMIZED: Cache Rule for R2 assets
+// In Cloudflare Dashboard:
+// Rules → Cache Rules → Create Rule:
+// - When: hostname = assets.example.com
+// - Cache: Standard
+// - Edge TTL: 1 month
+// - Browser TTL: 1 week
+
+// Or via Worker:
+export default {
+  async fetch(request, env) {
+    const cache = caches.default;
+    let response = await cache.match(request);
+
+    if (!response) {
+      const url = new URL(request.url);
+      const object = await env.ASSETS.get(url.pathname.slice(1));
+      if (!object) return new Response('Not Found', { status: 404 });
+
+      response = new Response(object.body, {
+        headers: {
+          'Cache-Control': 'public, max-age=2592000',
+          'Content-Type': object.httpMetadata?.contentType || 'application/octet-stream',
+        },
+      });
+      ctx.waitUntil(cache.put(request, response.clone()));
+    }
+    return response;
+  },
+};
+```
+
+**Detection**:
+- `[STATIC]`: Public domain/r2.dev enabled without Cache Rules in zone
+- `[STATIC]`: No Worker in front of public R2
+- `[LIVE-VALIDATED]`: R2 Class B operations match visitor count (no caching)
+
+**Guardian Rule**: `R2002`
+
+**Pattern Reference**: See `@skills/patterns/r2-cdn-cache.md`
+
+---
+
+#### TRAP-R2-006: Uncached R2.get() on Hot Path (MEDIUM) - NEW v1.5.0
+
+**Pattern**: Worker endpoint calls `R2.get()` without checking `caches.default` first. Each request triggers billable operation.
+
+```typescript
+// EXPENSIVE: Direct R2 hit every request
+app.get('/files/:id', async (c) => {
+  const file = await c.env.FILES.get(c.req.param('id'));
+  if (!file) return c.notFound();
+  return new Response(file.body);
+});
+// Cost: 1 Class B op per request ($0.36/M)
+
+// OPTIMIZED: Cache-first with R2 fallback
+app.get('/files/:id', async (c) => {
+  const cache = caches.default;
+  const cacheKey = new Request(c.req.url);
+
+  // Check edge cache first (FREE)
+  let response = await cache.match(cacheKey);
+  if (response) return response;
+
+  // Cache miss: fetch from R2 (Class B op)
+  const file = await c.env.FILES.get(c.req.param('id'));
+  if (!file) return c.notFound();
+
+  response = new Response(file.body, {
+    headers: {
+      'Content-Type': file.httpMetadata?.contentType || 'application/octet-stream',
+      'Cache-Control': 'public, max-age=86400',
+      'ETag': file.etag,
+    },
+  });
+
+  // Populate cache for next request
+  c.executionCtx.waitUntil(cache.put(cacheKey, response.clone()));
+  return response;
+});
+// 95% cache hit = 95% cost reduction
+```
+
+**Detection**:
+- `[STATIC]`: `R2.get()` without `cache.match()` in same handler
+- `[STATIC]`: Route handler with `env.*.get()` but no `caches.default` import
+- `[LIVE-VALIDATED]`: R2 Class B ops ≈ request count (should be << with caching)
+
+**Guardian Rule**: `R2002`
 
 ---
 
@@ -529,6 +705,124 @@ const result = await env.AI.run(model, { prompt: systemPrompt + userInput });
 - `[LIVE-VALIDATED]`: Query current vector count
 
 **Guardian Rule**: `BUDGET006`
+
+---
+
+## Log Privacy Violations (NEW v1.5.0)
+
+**CRITICAL**: Logging sensitive data to external services (Axiom, Better Stack, etc.) creates compliance liability and potential data breach exposure. Privacy violations often compound costs through:
+1. Regulatory fines (GDPR, CCPA)
+2. Incident response costs
+3. Customer notification requirements
+4. Reputation damage
+
+### TRAP-PRIVACY-001: Logging Authorization Headers (CRITICAL)
+
+**Pattern**: Logging request headers without redacting Authorization, API keys, or tokens.
+
+```typescript
+// DANGEROUS: Logs bearer tokens, API keys
+app.use('*', async (c, next) => {
+  console.log('Request headers:', Object.fromEntries(c.req.raw.headers));
+  await next();
+});
+// If exported to Axiom/Better Stack:
+// - Bearer tokens visible in logs
+// - API keys exposed to log viewers
+// - Session tokens compromised
+
+// SAFE: Redact sensitive headers
+const SENSITIVE_HEADERS = ['authorization', 'x-api-key', 'cookie', 'cf-access-client-secret'];
+
+app.use('*', async (c, next) => {
+  const safeHeaders = Object.fromEntries(
+    [...c.req.raw.headers.entries()].map(([key, value]) =>
+      SENSITIVE_HEADERS.includes(key.toLowerCase())
+        ? [key, '[REDACTED]']
+        : [key, value]
+    )
+  );
+  console.log('Request headers:', safeHeaders);
+  await next();
+});
+```
+
+**Detection**:
+- `[STATIC]`: `console.log.*headers` without redaction
+- `[STATIC]`: Logger call with `request.headers` as argument
+- `[LIVE-VALIDATED]`: Logs contain "Bearer", "Authorization:", "x-api-key"
+
+**Guardian Rule**: `PRIV001`
+
+---
+
+### TRAP-PRIVACY-002: Logging PII (HIGH)
+
+**Pattern**: Logging user data containing email addresses, phone numbers, or other personally identifiable information.
+
+```typescript
+// DANGEROUS: User object with PII goes to logs
+app.post('/api/users', async (c) => {
+  const user = await c.req.json();
+  console.log('Creating user:', user);  // Contains email, phone, etc.
+  await db.createUser(user);
+});
+
+// SAFE: Log only non-PII identifiers
+app.post('/api/users', async (c) => {
+  const user = await c.req.json();
+  console.log('Creating user:', { id: user.id, role: user.role });
+  await db.createUser(user);
+});
+
+// SAFE: Use sanitization utility
+import { sanitizeLogs } from './utils/log-sanitizer';
+
+console.log('User data:', sanitizeLogs(JSON.stringify(user)));
+// Output: "User data: {\"email\":\"[EMAIL]\",\"phone\":\"[PHONE]\"}"
+```
+
+**Detection**:
+- `[STATIC]`: `console.log` with user object variables
+- `[STATIC]`: Logger calls with request body
+- `[LIVE-VALIDATED]`: Logs contain email patterns, phone patterns
+
+**Guardian Rule**: `PRIV002`
+
+**Pattern Reference**: See `@commands/cf-logs.md` Privacy Filters section
+
+---
+
+### TRAP-PRIVACY-003: Logging Financial Data (CRITICAL)
+
+**Pattern**: Credit card numbers, bank accounts, or financial identifiers in logs.
+
+```typescript
+// DANGEROUS: Payment data in logs
+app.post('/api/checkout', async (c) => {
+  const payment = await c.req.json();
+  console.log('Processing payment:', payment);  // Contains card number!
+  // ...
+});
+
+// SAFE: Never log payment data
+app.post('/api/checkout', async (c) => {
+  const payment = await c.req.json();
+  console.log('Processing payment for order:', payment.orderId);
+  // Card data never touches console.log
+});
+
+// SAFE: Hash/mask if audit trail needed
+const maskedCard = payment.cardNumber.replace(/\d(?=\d{4})/g, '*');
+console.log('Card ending:', maskedCard.slice(-4));  // "****1234"
+```
+
+**Detection**:
+- `[STATIC]`: Variables named `card`, `payment`, `credit`, `account` in log statements
+- `[STATIC]`: 16-digit number patterns in console output
+- `[LIVE-VALIDATED]`: Logs contain credit card regex patterns
+
+**Guardian Rule**: `PRIV003`
 
 ---
 
@@ -783,6 +1077,9 @@ When adding new Cloudflare services or discovering new cost patterns:
 | Queues | High retries | COST001 | `max_retries > 2` |
 | AI | Large models | BUDGET004 | Model name contains `70b` |
 | Vectorize | Approaching limits | BUDGET006 | Vector count monitoring |
+| Privacy | Auth header logging | PRIV001 | `console.log.*headers` |
+| Privacy | PII in logs | PRIV002 | User objects in log calls |
+| Privacy | Financial data logs | PRIV003 | Card patterns in logs |
 
 ### Loop Safety Quick Reference
 
@@ -804,6 +1101,18 @@ When adding new Cloudflare services or discovering new cost patterns:
 | TRAP-R2-003 | R2 | MEDIUM | Class B ops without edge caching |
 | TRAP-R2-004 | R2 | CRITICAL | IA storage with read operations ($9 minimum) |
 
+### v1.5.0 New Cost Traps
+
+| Trap ID | Service | Severity | Description |
+|---------|---------|----------|-------------|
+| TRAP-D1-005 | D1 | HIGH | Unbounded SELECT * without LIMIT |
+| TRAP-D1-006 | D1 | MEDIUM | Drizzle findMany without limit option |
+| TRAP-R2-005 | R2 | HIGH | Public bucket without CDN/Cache Rules |
+| TRAP-R2-006 | R2 | MEDIUM | Uncached R2.get() on hot path |
+| TRAP-PRIVACY-001 | Privacy | CRITICAL | Logging Authorization headers |
+| TRAP-PRIVACY-002 | Privacy | HIGH | Logging PII (email, phone) |
+| TRAP-PRIVACY-003 | Privacy | CRITICAL | Logging financial data (cards) |
+
 ---
 
-*Last updated: 2026-01-17 (v1.4.0 - Cost Awareness + Containers + OTel)*
+*Last updated: 2026-01-18 (v1.5.0 - Query Optimization + External Logging + Privacy)*

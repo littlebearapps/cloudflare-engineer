@@ -670,6 +670,216 @@ def check_r2_infrequent_access(working_dir: str, config: dict) -> list[dict]:
     return unique_issues
 
 
+def check_d1_query_patterns(working_dir: str) -> list[dict]:
+    """Check for D1 query anti-patterns (NEW v1.5.0)."""
+    issues = []
+    src_dir = Path(working_dir) / "src"
+
+    if not src_dir.exists():
+        return issues
+
+    for ts_file in src_dir.rglob("*.ts"):
+        if "node_modules" in str(ts_file):
+            continue
+
+        try:
+            content = ts_file.read_text()
+            relative_path = ts_file.relative_to(working_dir)
+
+            # Extract suppressions from this file
+            suppressions = extract_suppressions(content)
+
+            # QUERY001: SELECT * without LIMIT
+            select_star_pattern = re.compile(
+                r'SELECT\s+\*\s+FROM\s+\w+(?:\s+WHERE[^;]*)?(?!\s+LIMIT)',
+                re.IGNORECASE | re.MULTILINE
+            )
+            for match in select_star_pattern.finditer(content):
+                line_num = content[:match.start()].count('\n') + 1
+
+                if is_suppressed(suppressions, line_num, "QUERY001"):
+                    debug_log(f"Suppressed QUERY001 at {relative_path}:{line_num}")
+                    continue
+
+                # Check if LIMIT exists later in the same statement
+                stmt_end = content.find(';', match.end())
+                if stmt_end != -1:
+                    rest = content[match.end():stmt_end].upper()
+                    if 'LIMIT' in rest:
+                        continue  # LIMIT found later
+
+                issues.append({
+                    "id": "QUERY001",
+                    "severity": "HIGH",
+                    "message": f"SELECT * without LIMIT at {relative_path}:{line_num} - potential row read explosion",
+                    "fix": "Add LIMIT clause or use pagination (TRAP-D1-005)",
+                })
+
+            # QUERY005: Drizzle .all() or .findMany() without .limit()
+            drizzle_patterns = [
+                (r'\.select\(\)[^;]*\.from\([^)]+\)(?![^;]*\.limit\()', "select().from() without .limit()"),
+                (r'\.findMany\(\s*\{(?![^}]*limit:)', "findMany() without limit option"),
+            ]
+            for pattern, desc in drizzle_patterns:
+                drizzle_regex = re.compile(pattern, re.MULTILINE | re.DOTALL)
+                for match in drizzle_regex.finditer(content):
+                    line_num = content[:match.start()].count('\n') + 1
+
+                    if is_suppressed(suppressions, line_num, "QUERY005"):
+                        debug_log(f"Suppressed QUERY005 at {relative_path}:{line_num}")
+                        continue
+
+                    issues.append({
+                        "id": "QUERY005",
+                        "severity": "HIGH",
+                        "message": f"Drizzle {desc} at {relative_path}:{line_num} - unbounded result set",
+                        "fix": "Add .limit() to prevent row read explosion (TRAP-D1-006)",
+                    })
+
+        except Exception:
+            pass
+
+    # Deduplicate
+    seen = set()
+    unique_issues = []
+    for issue in issues:
+        key = (issue["id"], issue["message"])
+        if key not in seen:
+            seen.add(key)
+            unique_issues.append(issue)
+
+    return unique_issues
+
+
+def check_r2_cache_patterns(working_dir: str) -> list[dict]:
+    """Check for R2.get() without cache wrapper (NEW v1.5.0)."""
+    issues = []
+    src_dir = Path(working_dir) / "src"
+
+    if not src_dir.exists():
+        return issues
+
+    for ts_file in src_dir.rglob("*.ts"):
+        if "node_modules" in str(ts_file):
+            continue
+
+        try:
+            content = ts_file.read_text()
+            relative_path = ts_file.relative_to(working_dir)
+
+            # Extract suppressions from this file
+            suppressions = extract_suppressions(content)
+
+            # Check if file uses R2 .get() but doesn't use cache
+            has_r2_get = re.search(r'\.\s*get\s*\([^)]+\)', content)
+            has_cache_api = 'caches.default' in content or 'cache.match' in content
+
+            if has_r2_get and not has_cache_api:
+                # Find R2 get patterns on hot paths (routes)
+                route_patterns = [
+                    r'app\.(get|post)\s*\([^,]+,\s*async[^}]+\.get\s*\(',
+                    r'router\.(get|post)\s*\([^,]+,\s*async[^}]+\.get\s*\(',
+                    r'fetch\s*\([^)]*request[^)]*\)[^}]*\.get\s*\(',
+                ]
+                for pattern in route_patterns:
+                    route_regex = re.compile(pattern, re.MULTILINE | re.DOTALL)
+                    for match in route_regex.finditer(content):
+                        line_num = content[:match.start()].count('\n') + 1
+
+                        if is_suppressed(suppressions, line_num, "R2002"):
+                            debug_log(f"Suppressed R2002 at {relative_path}:{line_num}")
+                            continue
+
+                        issues.append({
+                            "id": "R2002",
+                            "severity": "MEDIUM",
+                            "message": f"R2.get() on request path without cache at {relative_path}:{line_num}",
+                            "fix": "Wrap with caches.default for edge caching (TRAP-R2-006)",
+                        })
+                        break  # One warning per file
+
+        except Exception:
+            pass
+
+    # Deduplicate
+    seen = set()
+    unique_issues = []
+    for issue in issues:
+        key = (issue["id"], issue["message"])
+        if key not in seen:
+            seen.add(key)
+            unique_issues.append(issue)
+
+    return unique_issues
+
+
+def check_observability_extended(config: dict, working_dir: str) -> list[dict]:
+    """Extended observability checks (NEW v1.5.0)."""
+    issues = []
+
+    observability = config.get("observability", {})
+    logs = observability.get("logs", {})
+
+    # OBS001: Observability not enabled (already covered by PERF004, just return)
+    if not logs.get("enabled"):
+        return issues
+
+    # OBS002: Logs enabled but no export destination indication
+    # We can't detect dashboard destinations, but we can check for SDK usage
+    src_dir = Path(working_dir) / "src" if working_dir else None
+    has_logging_sdk = False
+
+    if src_dir and src_dir.exists():
+        for ts_file in src_dir.rglob("*.ts"):
+            if "node_modules" in str(ts_file):
+                continue
+            try:
+                content = ts_file.read_text()
+                # Check for common logging SDK imports
+                if any(sdk in content for sdk in [
+                    '@logtail/',
+                    'axiom',
+                    'pino',
+                    'winston',
+                    'tail_consumers',  # Tail worker config
+                ]):
+                    has_logging_sdk = True
+                    break
+            except Exception:
+                pass
+
+    # Check for tail_consumers in config (indicates tail worker export)
+    has_tail_consumers = bool(config.get("tail_consumers"))
+
+    if not has_logging_sdk and not has_tail_consumers:
+        issues.append({
+            "id": "OBS002",
+            "severity": "MEDIUM",
+            "message": "Logs enabled but no export destination detected",
+            "fix": "Configure Axiom/Better Stack export or add tail_consumers for log forwarding",
+        })
+
+    # OBS003: High sampling rate on potentially high-volume worker
+    head_sampling_rate = logs.get("head_sampling_rate", 1)
+    if head_sampling_rate >= 1:
+        # Check if this looks like a high-volume worker (queue consumer or multiple routes)
+        has_queue_consumer = bool(config.get("queues", {}).get("consumers"))
+        routes = config.get("routes", [])
+        has_multiple_routes = len(routes) > 1 or any(
+            '*' in str(route.get("pattern", "")) for route in routes if isinstance(route, dict)
+        )
+
+        if has_queue_consumer or has_multiple_routes:
+            issues.append({
+                "id": "OBS003",
+                "severity": "INFO",
+                "message": f"100% sampling rate on worker with queue/routes - may generate high log volume",
+                "fix": "Consider head_sampling_rate: 0.1-0.5 for production (see /cf-logs --analyze)",
+            })
+
+    return issues
+
+
 def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
     """Scan source code for loop-sensitive patterns that could cause billing issues."""
     issues = []
@@ -952,6 +1162,15 @@ def run_audit(config: dict, working_dir: str = "") -> list[dict]:
 
         # R2 Infrequent Access trap detection (NEW v1.4.0)
         issues.extend(check_r2_infrequent_access(working_dir, config))
+
+        # D1 Query pattern checks (NEW v1.5.0)
+        issues.extend(check_d1_query_patterns(working_dir))
+
+        # R2 cache pattern checks (NEW v1.5.0)
+        issues.extend(check_r2_cache_patterns(working_dir))
+
+        # Extended observability checks (NEW v1.5.0)
+        issues.extend(check_observability_extended(config, working_dir))
 
     # Apply .pre-deploy-ignore suppressions
     issues = filter_ignored_issues(issues, ignore_rules)

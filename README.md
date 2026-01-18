@@ -1,10 +1,10 @@
 # Cloudflare Engineer Plugin
 
-[![Version](https://img.shields.io/badge/version-1.4.1-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
+[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-v2.0.12+-purple.svg)](https://claude.com/claude-code)
 
-A Claude Code plugin that provides **Platform Architect** capabilities for designing, implementing, optimizing, and securing Cloudflare Workers applications. Features **Cost Awareness**, **Container Support**, **Observability Export**, and **Loop Protection**.
+A Claude Code plugin that provides **Platform Architect** capabilities for designing, implementing, optimizing, and securing Cloudflare Workers applications. Features **D1 Query Optimization**, **Cloudflare Workflows**, **External Logging**, **Python Workers**, **Zero Trust Tooling**, and **R2 Cost Protection**.
 
 ## Quick Install
 
@@ -24,10 +24,76 @@ A Claude Code plugin that provides **Platform Architect** capabilities for desig
 
 | Category | What You Get |
 |----------|--------------|
-| **11 Skills** | Cost optimization, security auditing, architecture design, Loop Protection, Zero Trust, Custom Hostnames, Media/Streaming, and more |
-| **4 Commands** | `/cf-costs`, `/cf-audit` (with Resource Discovery), `/cf-design`, `/cf-pattern` |
+| **13 Skills** | D1 Query Optimization, Cloudflare Workflows, Cost optimization, security auditing, architecture design, Loop Protection, Zero Trust, Custom Hostnames, Media/Streaming, and more |
+| **5 Commands** | `/cf-costs`, `/cf-audit` (with Resource Discovery), `/cf-design`, `/cf-pattern`, `/cf-logs` |
 | **3 Agents** | Deep analysis with MCP tool integration |
-| **1 Hook** | Pre-deploy validation with Performance Budgeter and Loop Detection |
+| **1 Hook** | Pre-deploy validation with Performance Budgeter, Loop Detection, and Query Checks |
+
+## What's New in v1.5.0
+
+### D1 Query Optimization
+
+New `query-optimizer` skill protects against the #1 D1 billing trap—row read explosion from unindexed queries:
+
+| Feature | Problem Solved | Guardian Rule |
+|---------|---------------|---------------|
+| **SELECT * Detection** | Unbounded queries reading entire tables | QUERY001 |
+| **Drizzle .all() Checks** | ORM-hidden unbounded queries | QUERY005 |
+| **N+1 Query Detection** | Database calls inside loops | QUERY002 |
+| **Pagination Guidance** | List endpoints without limits | QUERY004 |
+| **Caching Decision Tree** | When to use KV vs Cache API | Skill guidance |
+
+### Cloudflare Workflows
+
+New `workflow-architect` skill guides you toward Workflows for multi-step processes instead of complex Queue patterns:
+
+- **Queues vs Workflows Decision Tree**: When each is appropriate
+- **WorkflowEntrypoint Boilerplate**: TypeScript templates with `step.do()`, `step.sleep()`
+- **Step Patterns**: Sequential, parallel, conditional branching, fan-out/fan-in
+- **Anti-Patterns**: What to avoid in workflow design
+
+### External Logging (`/cf-logs`)
+
+New command for configuring observability export to external vendors:
+
+| Vendor | Free Tier | Best For |
+|--------|-----------|----------|
+| **Axiom** | 500GB/month | High-volume, long retention |
+| **Better Stack** | 1GB/month | Real-time dashboards |
+| **HTTP Endpoint** | N/A | Custom/self-hosted |
+
+Includes **Privacy Filters** with auto-recommended redaction patterns for Authorization headers, API keys, PII, and financial data.
+
+### Python Workers Support
+
+Extended `architect` skill with Python Workers decision tree:
+
+- **Use Python Workers**: For familiar syntax, simple data processing
+- **Use JS Workers**: For best cold start, npm ecosystem
+- **Use Containers**: For numpy, pandas, opencv, or native libs
+
+### Zero Trust Tooling Expansion
+
+Extended `zero-trust` skill with new capabilities:
+
+| Feature | Purpose |
+|---------|---------|
+| **Tunnel Configuration** | Quick start YAML templates for cloudflared |
+| **Access Policy Generator** | Email OTP, Service Token, combined patterns |
+| **Admin Protection Checklist** | Common security gaps for admin panels |
+| **ZT009-012 Rules** | New validation for service tokens, MFA, sessions |
+
+### R2 Class B Cost Protection
+
+Enhanced `cost-analyzer` agent with R2-specific checks:
+
+| Check | Detection |
+|-------|-----------|
+| **R2002** | `R2.get()` without `caches.default` wrapper |
+| **TRAP-R2-005** | Public bucket without CDN configuration |
+| **TRAP-R2-006** | Uncached reads on hot paths |
+
+---
 
 ## What's New in v1.4.0
 
@@ -134,6 +200,7 @@ This plugin **proactively warns** you about cost and privacy impacts **before yo
 | `/cf-audit [--validate] [--category=<cat>]` | Security/performance/cost audit with Resource Discovery |
 | `/cf-design` | Interactive architecture design wizard |
 | `/cf-pattern <name> [--analyze-only]` | Apply architecture pattern |
+| `/cf-logs [--vendor=axiom\|betterstack\|http] [--check] [--analyze]` | External logging configuration (NEW v1.5.0) |
 
 ## Skills (Auto-Invoked)
 
@@ -150,13 +217,16 @@ Skills activate automatically based on your questions:
 "Is my staging environment protected?"      -> zero-trust
 "How do I add custom domains for SaaS?"     -> custom-hostnames
 "How do I serve videos with signed URLs?"   -> media-streaming
+"Optimize my D1 queries"                    -> query-optimizer (NEW v1.5.0)
+"Should I use Queues or Workflows?"         -> workflow-architect (NEW v1.5.0)
+"Set up a Cloudflare Tunnel"                -> zero-trust (Tunnel config)
 ```
 
-### All 11 Skills
+### All 13 Skills
 
 | Skill | Purpose |
 |-------|---------|
-| `architect` | Architecture design with Edge-Native Constraints + Billing Safety |
+| `architect` | Architecture design with Edge-Native Constraints + Billing Safety + Pages Migration |
 | `guardian` | Security + Budget + Privacy + Loop Auditing |
 | `implement` | Code scaffolding (Hono, D1, Drizzle) + Queue Safety |
 | `loop-breaker` | Recursion guards, idempotency, DO hibernation |
@@ -164,9 +234,11 @@ Skills activate automatically based on your questions:
 | `scale` | Scaling strategies and patterns |
 | `probes` | MCP audit queries |
 | `patterns` | Architecture pattern catalog (5 patterns) |
-| `zero-trust` | Access policy auditing |
+| `zero-trust` | Access policy auditing + Tunnel config + Admin Protection |
 | `custom-hostnames` | SSL for SaaS management |
 | `media-streaming` | Stream and Images patterns |
+| `query-optimizer` | D1 query optimization, N+1 detection, caching decisions (NEW v1.5.0) |
+| `workflow-architect` | Cloudflare Workflows patterns, Queues vs Workflows (NEW v1.5.0) |
 
 ## Pre-Deploy Validation Hook
 
@@ -194,6 +266,12 @@ Automatically validates `wrangler.toml` before deployment:
 | LOOP006 | HIGH | Queue without DLQ |
 | LOOP007 | CRITICAL | Unbounded `while(true)` |
 | LOOP008 | MEDIUM | High queue retry count |
+| QUERY001 | HIGH | SELECT * without LIMIT (NEW v1.5.0) |
+| QUERY005 | HIGH | Drizzle .all() without .limit() (NEW v1.5.0) |
+| R2002 | MEDIUM | R2.get() without cache wrapper (NEW v1.5.0) |
+| OBS001 | LOW | Observability not enabled (NEW v1.5.0) |
+| OBS002 | MEDIUM | Logs enabled but no export destination (NEW v1.5.0) |
+| OBS003 | INFO | High sampling rate with high-volume worker (NEW v1.5.0) |
 
 **CRITICAL issues block deployment.** This includes loop safety and cost issues that could cause billing explosions.
 
@@ -314,8 +392,9 @@ For `--validate` mode, configure these Cloudflare MCP servers:
 | `/cf-audit` | Config & code analysis | + Production metrics |
 | `/cf-design` | Full functionality | Same |
 | `/cf-pattern` | Full functionality | Same |
+| `/cf-logs` | Full functionality | + Log volume analysis |
 | Pre-deploy hook | Full functionality | Same |
-| All 11 skills | Full functionality | Same |
+| All 13 skills | Full functionality | Same |
 | All 3 agents | Static analysis | + Real-time data |
 
 **Graceful Degradation**: Commands continue with static analysis if MCP tools are unavailable, tagging affected findings as `[INCOMPLETE]`.
@@ -337,6 +416,12 @@ For `--validate` mode, configure these Cloudflare MCP servers:
 # Apply patterns
 /cf-pattern circuit-breaker            # Apply pattern
 /cf-pattern service-bindings --analyze-only  # Analysis only
+
+# External logging (NEW v1.5.0)
+/cf-logs                               # Interactive vendor selection wizard
+/cf-logs --vendor=axiom                # Direct Axiom configuration
+/cf-logs --check                       # Validate existing observability config
+/cf-logs --analyze                     # Log volume analysis for sampling recs
 ```
 
 ## Requirements
@@ -386,8 +471,8 @@ When Claude suggests code changes involving D1, R2, or Durable Objects, the guar
 ```
 cloudflare-engineer/
 ├── .claude-plugin/plugin.json    # Plugin manifest
-├── skills/                       # 11 auto-invoked skills
-│   ├── architect/                # Architecture + Edge-Native + Billing Safety
+├── skills/                       # 13 auto-invoked skills
+│   ├── architect/                # Architecture + Edge-Native + Billing Safety + Pages Migration
 │   ├── guardian/                 # Security + Budget + Privacy + Loop Auditing
 │   ├── implement/                # Code scaffolding + Queue Safety
 │   ├── loop-breaker/             # Recursion guards + Loop protection
@@ -395,12 +480,14 @@ cloudflare-engineer/
 │   ├── scale/                    # Scaling patterns
 │   ├── probes/                   # MCP queries
 │   ├── patterns/                 # Pattern catalog (5 patterns)
-│   ├── zero-trust/               # Access policies
+│   ├── zero-trust/               # Access policies + Tunnel config + Admin Protection
 │   ├── custom-hostnames/         # SSL for SaaS
-│   └── media-streaming/          # Stream & Images
+│   ├── media-streaming/          # Stream & Images
+│   ├── query-optimizer/          # D1 query optimization (NEW v1.5.0)
+│   └── workflow-architect/       # Cloudflare Workflows (NEW v1.5.0)
 ├── agents/                       # 3 deep-analysis agents
-├── commands/                     # 4 slash commands
-├── hooks/                        # Pre-deploy validation + Loop Detection
+├── commands/                     # 5 slash commands (including /cf-logs)
+├── hooks/                        # Pre-deploy validation + Loop Detection + Query Checks
 ├── COST_SENSITIVE_RESOURCES.md   # Cost trap catalog
 ├── LICENSE                       # MIT
 ├── CONTRIBUTING.md               # Contribution guide

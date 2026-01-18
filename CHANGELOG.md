@@ -5,6 +5,56 @@ All notable changes to the Cloudflare Engineer plugin will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-01-18
+
+### Added
+- **D1 Query Optimization Skill** (`skills/query-optimizer/SKILL.md`):
+  - Static analysis for unbounded SELECT * queries
+  - N+1 query detection in loops
+  - Drizzle ORM `.all()` without `.limit()` detection
+  - Caching decision tree (KV vs Cache API)
+  - QUERY001-005 validation rules
+  - TRAP-D1-005, TRAP-D1-006 cost traps
+- **Cloudflare Workflows Skill** (`skills/workflow-architect/SKILL.md`):
+  - Decision tree: Queues vs Workflows vs Containers
+  - WorkflowEntrypoint boilerplate templates
+  - Step patterns (sequential, parallel, conditional, fan-out)
+  - Retry and error handling with NonRetryableError
+  - Anti-patterns section
+- **External Logging Command** (`/cf-logs`):
+  - Interactive vendor selection wizard
+  - Axiom, Better Stack, HTTP tail worker configuration
+  - Privacy filters (auto-recommended)
+  - Sampling rate calculator based on volume
+  - OBS001-003 validation rules
+- **Python Workers Support** in architect skill:
+  - Decision tree for JS Workers vs Python Workers vs Containers
+  - Pyodide/micropip compatibility matrix
+  - Python Workers template
+  - When to use Containers for heavy compute
+- **Zero Trust Tooling Expansion** in zero-trust skill:
+  - Cloudflared Tunnel configuration templates
+  - Access Policy Generator (Email OTP, Service Token)
+  - Admin Panel Protection checklist
+  - ZT009-012 validation rules
+- **R2 Class B Cost Protection** in cost-analyzer agent:
+  - Architecture check for public bucket without CDN
+  - Code scan for uncached R2.get() calls
+  - R2002-003 validation rules
+  - TRAP-R2-005, TRAP-R2-006 cost traps
+- **Privacy Cost Traps**:
+  - TRAP-PRIVACY-001: Logging Authorization headers
+  - TRAP-PRIVACY-002: Logging PII
+  - TRAP-PRIVACY-003: Logging financial data
+
+### Changed
+- Architect skill includes Python Workers decision tree and Pages vs Workers matrix
+- Zero-Trust skill includes Tunnel config and Access Policy Generator
+- Cost-analyzer agent includes R2 Class B analysis section
+- Pre-deploy hook includes QUERY and OBS validation rules
+- Skill count increased from 11 to 13
+- Command count increased from 4 to 5
+
 ## [1.4.1] - 2026-01-18
 
 ### Added
