@@ -1,3 +1,8 @@
+---
+name: r2-cdn-cache
+description: R2 Class B cost protection pattern using Cloudflare Cache Rules to serve static assets from edge CDN.
+---
+
 # R2 CDN Cache Pattern
 
 ## Problem
@@ -149,7 +154,7 @@ The minimum charge exists because Cloudflare bills in units, and a single operat
 **Recommendation**:
 - NEVER use IA for buckets with any read operations
 - IA is ONLY for true cold storage (backups, archives)
-- If you need IA, ensure objects are large (>100MB) to amortize retrieval costs
+- If IA is needed, ensure objects are large (>100MB) to amortize retrieval costs
 
 ```typescript
 // WARNING: This can trigger $9 minimum charge

@@ -1,15 +1,6 @@
 ---
 name: patterns
-description: Cloudflare architecture patterns for common problems. Reference when decomposing monolithic Workers, optimizing D1 writes, or adding external API resilience.
-triggers:
-  - monolithic Worker
-  - subrequest limits
-  - D1 write costs
-  - batch inserts
-  - external API failures
-  - circuit breaker
-  - resilience patterns
-  - decomposing Workers
+description: Cloudflare architecture patterns for common problems. Reference when decomposing monolithic Workers, hitting subrequest limits, optimizing D1 write costs with batch inserts, handling external API failures with circuit breaker, or applying resilience patterns.
 ---
 
 # Cloudflare Architecture Patterns
@@ -153,7 +144,7 @@ Detailed implementation guides are in separate files:
 ## Pattern Selection Guide
 
 ```
-Is your Worker > 500 lines or hitting subrequest limits?
+Is the Worker > 500 lines or hitting subrequest limits?
 ├─ Yes → Consider SERVICE-BINDINGS pattern
 └─ No
    │

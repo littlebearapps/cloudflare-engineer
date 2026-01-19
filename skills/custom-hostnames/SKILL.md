@@ -198,7 +198,7 @@ Add this TXT record:
 ### Step 3: Wait for SSL
 SSL certificate will be issued automatically once DNS propagates (usually 5-15 minutes).
 
-You can check status at: /api/hostnames/${hostname.id}/status
+Check status at: /api/hostnames/${hostname.id}/status
   `;
 }
 ```

@@ -1,6 +1,6 @@
 {
   "name": "cloudflare-engineer",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Platform Architect capabilities for Cloudflare - D1 Query Optimization, Cloudflare Workflows, External Logging (Axiom/Better Stack), Python Workers, Zero Trust Tooling, and R2 Cost Protection. Includes Edge-Native Constraints, Vibecoder Proactive Safeguards, Loop Protection, billing safety, recursion guards, queue safety, Privacy Filters, and cost simulation.",
   "author": {
     "name": "Little Bear Apps",

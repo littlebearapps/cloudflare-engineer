@@ -1,13 +1,6 @@
 ---
 name: probes
-description: Pre-built audit probes for Cloudflare services. Reference these query patterns when validating D1 indexes, observability metrics, AI Gateway costs, and queue health via MCP tools.
-triggers:
-  - validating D1 queries
-  - checking observability data
-  - auditing AI Gateway costs
-  - queue health checks
-  - MCP tool orchestration
-  - EXPLAIN QUERY PLAN
+description: Pre-built audit probes for Cloudflare services. Reference these query patterns when validating D1 indexes with EXPLAIN QUERY PLAN, checking observability data, auditing AI Gateway costs, performing queue health checks, or orchestrating MCP tools for live validation.
 ---
 
 # Cloudflare Audit Probes

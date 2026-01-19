@@ -2,7 +2,7 @@
 
 ## Overview
 
-Claude Code plugin providing **Platform Architect** capabilities for Cloudflare with **D1 Query Optimization**, **Cloudflare Workflows**, **External Logging**, **Python Workers**, **Zero Trust Tooling**, and **R2 Cost Protection** (v1.5.0).
+Claude Code plugin providing **Platform Architect** capabilities for Cloudflare with **D1 Query Optimization**, **Cloudflare Workflows**, **External Logging**, **Python Workers**, **Zero Trust Tooling**, and **R2 Cost Protection** (v1.5.1).
 
 **GitHub**: https://github.com/littlebearapps/cloudflare-engineer
 **Local**: `~/.claude/local-marketplace/cloudflare-engineer/`
@@ -219,6 +219,7 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 
 ## Version History
 
+- v1.5.1 - **Best Practices Audit**: Progressive disclosure refactoring (architect, implement, zero-trust skills split into references/), agent `<example>` blocks added for improved triggering, skill frontmatter standardisation, writing style converted to imperative form (~2,300 lines reduced through modularisation)
 - v1.5.0 - **Query Optimization + External Logging + Privacy**: D1 query-optimizer skill (QUERY001-005), workflow-architect skill for Cloudflare Workflows, cf-logs command for external logging (Axiom/Better Stack), Python Workers decision tree, Pages vs Workers migration triggers, Zero Trust extensions (Tunnel config, Access Policy Generator, ZT009-012), R2 Class B cost protection (R2002), Privacy cost traps (TRAP-PRIVACY-001-003), 7 new cost traps, 14 new validation rules (13 skills, 3 agents, 5 commands, 1 hook)
 - v1.4.1 - **Hook Suppression**: `@pre-deploy-ok` inline comments, `.pre-deploy-ignore` project file, `SKIP_PREDEPLOY_CHECK` env var bypass, BUDGET009 suppression support, improved LOOP005 depth detection, TOML parser fixes
 - v1.4.0 - **Cost Awareness + Containers + Observability**: D1 row read protection (BUDGET007, kv-cache-first pattern), R2 Class B caching (BUDGET008, r2-cdn-cache pattern), R2 IA minimum billing trap (BUDGET009), Workers + Assets architecture (ARCH001), Workload Router for Isolates vs Containers, Observability Export (Axiom/Better Stack/OTel), 2 new patterns, 4 new cost traps (11 skills, 3 agents, 4 commands, 1 hook)

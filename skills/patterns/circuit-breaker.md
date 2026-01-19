@@ -1,11 +1,16 @@
+---
+name: circuit-breaker
+description: External API resilience pattern for Workers calling third-party services with fail-fast behavior and graceful degradation.
+---
+
 # Circuit Breaker Pattern
 
 Add resilience for external API dependencies with fail-fast behavior and graceful degradation.
 
 ## Problem
 
-External API failures cascade to your Worker:
-- Third-party APIs go down, your service fails
+External API failures cascade to the Worker:
+- Third-party APIs go down, the service fails
 - Slow responses cause timeouts and poor UX
 - No fallback when dependencies are unavailable
 - Error rate spikes correlate with upstream issues
@@ -13,7 +18,7 @@ External API failures cascade to your Worker:
 
 **Impact Example**:
 - External API has 5-minute outage
-- Your Worker keeps retrying every request
+- The Worker keeps retrying every request
 - All requests timeout (30s each)
 - User experience: 30s wait then error
 - Cost: Wasted CPU time, subrequests
