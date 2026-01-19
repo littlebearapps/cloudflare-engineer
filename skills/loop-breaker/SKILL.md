@@ -1,14 +1,6 @@
 ---
 name: loop-breaker
-description: Scaffold middleware to detect and block Worker self-recursion, infinite fetch chains, and runaway loops. Use this skill when designing Workers that call other Workers, implement webhooks, or handle events that might trigger themselves.
-triggers:
-  - recursion
-  - infinite loop
-  - worker calling worker
-  - webhook
-  - self-call
-  - fetch chain
-  - denial of wallet
+description: Scaffold middleware to detect and block Worker self-recursion, infinite fetch chains, and runaway loops. Use this skill when designing Workers that call other Workers, implement webhooks, or handle events that might trigger themselves. Also use when encountering "recursion", "infinite loop", "self-call", "fetch chain", or "denial of wallet" scenarios.
 ---
 
 # Loop Breaker Skill

@@ -5,6 +5,27 @@ All notable changes to the Cloudflare Engineer plugin will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-01-19
+
+### Changed
+- **Progressive Disclosure Refactoring** - Large skills split into modular references:
+  - `architect` skill: Core concepts in SKILL.md, detailed content moved to `references/`
+  - `implement` skill: Core scaffolding in SKILL.md, detailed patterns moved to `references/`
+  - `zero-trust` skill: Core auditing in SKILL.md, detailed guides moved to `references/`
+  - Net reduction of ~2,300 lines through modularisation (272 insertions, 2,618 deletions)
+- **Agent `<example>` Blocks** - All 3 agents now include structured examples with `<commentary>` for improved triggering:
+  - `architecture-reviewer` - 2 examples showing when to trigger
+  - `cost-analyzer` - 2 examples for cost analysis scenarios
+  - `security-auditor` - 2 examples for security review scenarios
+- **Skill Frontmatter Standardisation**:
+  - Removed non-standard `triggers` field from 5 skills (loop-breaker, patterns, probes, query-optimizer, workflow-architect)
+  - Added YAML frontmatter to 5 pattern files (circuit-breaker, d1-batching, kv-cache-first, r2-cdn-cache, service-bindings)
+- **Writing Style Audit** - Converted second-person phrases to imperative form throughout skills
+
+### Fixed
+- Skills now follow Claude Code plugin best practices for progressive disclosure
+- Agent descriptions now match official triggering patterns
+
 ## [1.5.0] - 2026-01-18
 
 ### Added

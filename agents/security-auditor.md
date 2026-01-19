@@ -1,6 +1,34 @@
 ---
 name: security-auditor
-description: Deep-dive security audit for Cloudflare Workers. Use this agent when you need comprehensive security analysis of wrangler configs, source code, and bindings. Goes beyond configuration to analyze actual code patterns for vulnerabilities.
+description: |
+  Deep-dive security audit for Cloudflare Workers. Use this agent when you need comprehensive security analysis of wrangler configs, source code, and bindings. Goes beyond configuration to analyze actual code patterns for vulnerabilities.
+
+  <example>
+  Context: The user wants a security review before going to production.
+  user: "Can you do a security audit of my Worker before we launch?"
+  assistant: "I'll use the security-auditor agent to perform a comprehensive security audit of your Worker configuration, source code, and bindings."
+  <commentary>
+  Pre-launch security reviews trigger the security-auditor agent. It checks for SQL injection, XSS, secrets in plaintext, and authentication gaps.
+  </commentary>
+  </example>
+
+  <example>
+  Context: The user is concerned about potential vulnerabilities in their code.
+  user: "I'm worried about SQL injection in my D1 queries - can you check?"
+  assistant: "Let me use the security-auditor agent to scan your codebase for SQL injection vulnerabilities and other D1 security concerns."
+  <commentary>
+  Specific security concern investigations benefit from the security-auditor's code analysis capabilities.
+  </commentary>
+  </example>
+
+  <example>
+  Context: The user needs to ensure their API is properly protected.
+  user: "Can you verify that all my admin routes require authentication?"
+  assistant: "I'll use the security-auditor agent to trace authentication through your request handlers and identify any unprotected admin routes."
+  <commentary>
+  Authentication and authorization audits are trigger conditions. The agent can trace auth middleware and flag gaps.
+  </commentary>
+  </example>
 model: sonnet
 color: red
 tools: ["Read", "Glob", "Grep", "Bash", "mcp__cloudflare-bindings__workers_list", "mcp__cloudflare-bindings__workers_get_worker", "mcp__cloudflare-bindings__kv_namespaces_list", "mcp__cloudflare-bindings__r2_buckets_list", "mcp__cloudflare-observability__query_worker_observability"]

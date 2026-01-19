@@ -1,3 +1,8 @@
+---
+name: kv-cache-first
+description: D1 row read protection pattern using KV cache layer to prevent billing explosion on high-traffic endpoints.
+---
+
 # KV-Cache-First Pattern
 
 ## Problem

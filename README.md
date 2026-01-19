@@ -1,6 +1,6 @@
 # Cloudflare Engineer Plugin
 
-[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
+[![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-v2.0.12+-purple.svg)](https://claude.com/claude-code)
 
@@ -9,12 +9,13 @@ A Claude Code plugin that provides **Platform Architect** capabilities for desig
 ## Quick Install
 
 ```bash
-# From GitHub (recommended)
-/plugin marketplace add littlebearapps/cloudflare-engineer
-/plugin install cloudflare-engineer@littlebearapps
-
-# Or install directly
 /plugin install github:littlebearapps/cloudflare-engineer
+```
+
+To update to the latest version:
+
+```bash
+/plugin update cloudflare-engineer
 ```
 
 > [!TIP]

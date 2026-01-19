@@ -1,3 +1,8 @@
+---
+name: d1-batching
+description: D1 write cost optimization pattern using batch operations instead of per-row inserts.
+---
+
 # D1 Batching Pattern
 
 Optimize D1 write costs by batching operations instead of per-row inserts.

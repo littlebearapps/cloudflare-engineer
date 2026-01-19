@@ -1,3 +1,8 @@
+---
+name: service-bindings
+description: Worker decomposition pattern using Service Bindings RPC for zero-overhead microservice communication.
+---
+
 # Service Bindings Pattern
 
 Decompose monolithic Workers into service-bound microservices using RPC instead of HTTP fetch.

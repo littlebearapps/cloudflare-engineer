@@ -1,6 +1,34 @@
 ---
 name: cost-analyzer
-description: Deep cost analysis for Cloudflare architectures. Use this agent when you need detailed cost breakdowns, trend analysis, or optimization strategies based on actual usage data from observability and AI Gateway logs.
+description: |
+  Deep cost analysis for Cloudflare architectures. Use this agent when you need detailed cost breakdowns, trend analysis, or optimization strategies based on actual usage data from observability and AI Gateway logs.
+
+  <example>
+  Context: The user wants to understand their Cloudflare spending.
+  user: "Can you analyze my Cloudflare costs and find optimization opportunities?"
+  assistant: "I'll use the cost-analyzer agent to perform a deep cost analysis using your observability data and identify savings opportunities."
+  <commentary>
+  Cost optimization requests trigger the cost-analyzer agent. It can query observability for actual usage and calculate costs per service.
+  </commentary>
+  </example>
+
+  <example>
+  Context: The user notices their D1 costs are higher than expected.
+  user: "My D1 bill seems high - can you figure out why?"
+  assistant: "Let me use the cost-analyzer agent to analyze your D1 usage patterns, check for per-row inserts, and identify batching opportunities."
+  <commentary>
+  Specific service cost concerns benefit from the cost-analyzer's ability to query usage data and compare against pricing formulas.
+  </commentary>
+  </example>
+
+  <example>
+  Context: The user is planning capacity for a new feature.
+  user: "If we add AI features, what will our monthly costs look like?"
+  assistant: "I'll use the cost-analyzer agent to model your projected AI costs based on expected usage and recommend cost-efficient model choices."
+  <commentary>
+  Cost projection and capacity planning are trigger conditions. The agent can model scenarios using pricing data.
+  </commentary>
+  </example>
 model: sonnet
 color: yellow
 tools: ["Read", "Glob", "Grep", "Bash", "mcp__cloudflare-observability__query_worker_observability", "mcp__cloudflare-observability__list_datasets", "mcp__cloudflare-ai-gateway__list_logs", "mcp__cloudflare-ai-gateway__list_gateways", "mcp__cloudflare-bindings__d1_databases_list", "mcp__cloudflare-bindings__d1_database_query", "mcp__cloudflare-bindings__r2_buckets_list", "mcp__cloudflare-bindings__kv_namespaces_list", "mcp__cloudflare-bindings__queues_list", "mcp__cloudflare-bindings__workers_list"]

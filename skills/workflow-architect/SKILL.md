@@ -1,15 +1,6 @@
 ---
 name: workflow-architect
-description: Design Cloudflare Workflows for multi-step processes. Use this skill when users need background jobs, multi-step pipelines, or long-running processes that exceed Worker limits. Guides toward Workflows instead of complex Queue patterns.
-triggers:
-  - workflow
-  - multi-step
-  - pipeline
-  - background job
-  - long-running
-  - saga
-  - orchestration
-  - state machine
+description: Design Cloudflare Workflows for multi-step processes. Use this skill when users need background jobs, multi-step pipelines, long-running processes that exceed Worker limits, saga patterns, orchestration, or state machines. Guides toward Workflows instead of complex Queue patterns.
 ---
 
 # Workflow Architect Skill
@@ -21,7 +12,7 @@ Design Cloudflare Workflows for multi-step, long-running, and fault-tolerant pro
 ### Decision Tree: Queues vs Workflows vs Containers
 
 ```
-What kind of background processing do you need?
+What background processing is needed?
 │
 ├─ Single operation with retry?
 │   │

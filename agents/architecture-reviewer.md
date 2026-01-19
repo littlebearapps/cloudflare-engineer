@@ -1,6 +1,34 @@
 ---
 name: architecture-reviewer
-description: Review Cloudflare architectures for anti-patterns, optimization opportunities, and best practices. Use this agent when designing new systems, refactoring existing ones, or before major deployments.
+description: |
+  Review Cloudflare architectures for anti-patterns, optimization opportunities, and best practices. Use this agent when designing new systems, refactoring existing ones, or before major deployments.
+
+  <example>
+  Context: The user has finished designing a new Workers architecture and wants feedback.
+  user: "Can you review my wrangler.toml for anti-patterns?"
+  assistant: "I'll use the architecture-reviewer agent to analyze your configuration for anti-patterns and optimization opportunities."
+  <commentary>
+  Since the user is asking for architecture review of their wrangler config, use the Task tool to launch the architecture-reviewer agent.
+  </commentary>
+  </example>
+
+  <example>
+  Context: The user is preparing to deploy a new Worker to production.
+  user: "Before I deploy, can you check if there are any cost traps or scalability issues?"
+  assistant: "Let me use the architecture-reviewer agent to audit your architecture for cost traps and scalability concerns before deployment."
+  <commentary>
+  Pre-deployment architecture review is a trigger condition for this agent. It can identify D1 missing indexes, queue anti-patterns, and other issues.
+  </commentary>
+  </example>
+
+  <example>
+  Context: The user is refactoring a monolithic Worker into multiple services.
+  user: "I'm breaking up my monolith Worker - can you review my service decomposition plan?"
+  assistant: "I'll use the architecture-reviewer agent to evaluate your service decomposition and recommend patterns like Service Bindings."
+  <commentary>
+  Refactoring and system design decisions benefit from architecture review. The agent can recommend golden path patterns.
+  </commentary>
+  </example>
 model: sonnet
 color: blue
 tools: ["Read", "Glob", "Grep", "Bash", "mcp__cloudflare-bindings__workers_list", "mcp__cloudflare-bindings__workers_get_worker", "mcp__cloudflare-bindings__d1_databases_list", "mcp__cloudflare-bindings__d1_database_query", "mcp__cloudflare-bindings__queues_list", "mcp__cloudflare-bindings__r2_buckets_list", "mcp__cloudflare-bindings__kv_namespaces_list", "mcp__cloudflare-observability__query_worker_observability"]

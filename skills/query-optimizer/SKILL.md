@@ -1,15 +1,6 @@
 ---
 name: query-optimizer
-description: Static analysis of D1 queries to prevent the #1 billing trap - unindexed queries causing row read explosion (5M daily free limit). Use this skill when reviewing D1 usage, analysing query patterns, or when users report unexpected D1 costs.
-triggers:
-  - D1 costs
-  - row reads
-  - slow queries
-  - unindexed
-  - SELECT *
-  - N+1
-  - pagination
-  - drizzle
+description: Static analysis of D1 queries to prevent the #1 billing trap - unindexed queries causing row read explosion (5M daily free limit). Use this skill when reviewing D1 usage, analysing query patterns, unexpected D1 costs, row reads, slow queries, unindexed columns, SELECT * issues, N+1 problems, pagination, or Drizzle ORM queries.
 ---
 
 # D1 Query Optimizer Skill
