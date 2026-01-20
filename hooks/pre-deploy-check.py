@@ -137,6 +137,30 @@ def load_ignore_file(working_dir: str) -> dict[str, set[str]]:
     return ignore_rules
 
 
+def is_test_file(file_path: str) -> bool:
+    """Check if a file is a test file based on common naming conventions.
+
+    Test files often contain unbounded queries for setup/teardown,
+    which would otherwise trigger false positives.
+    """
+    test_patterns = [
+        r'\.test\.[jt]sx?$',        # file.test.ts, file.test.js
+        r'\.spec\.[jt]sx?$',        # file.spec.ts, file.spec.js
+        r'_test\.[jt]sx?$',         # file_test.ts
+        r'__tests__/',              # __tests__/file.ts
+        r'/tests?/',                # /test/file.ts, /tests/file.ts
+        r'\.stories\.[jt]sx?$',     # Storybook files
+        r'\.e2e\.[jt]sx?$',         # E2E test files
+        r'/fixtures?/',             # /fixture/, /fixtures/
+        r'/mocks?/',                # /mock/, /mocks/
+    ]
+    file_path_lower = file_path.lower()
+    for pattern in test_patterns:
+        if re.search(pattern, file_path_lower):
+            return True
+    return False
+
+
 def is_rule_ignored(ignore_rules: dict[str, set[str]], rule_id: str, context: str = "") -> bool:
     """Check if a rule is ignored by .pre-deploy-ignore file.
 
@@ -403,6 +427,8 @@ def check_secrets_in_vars(config: dict) -> list[dict]:
                         "severity": "CRITICAL",
                         "message": f"Potential secret in plaintext: vars.{key}",
                         "fix": f"Use: wrangler secret put {key}",
+                        "detection": "HEURISTIC",
+                        "verify": f"Check if vars.{key} contains an actual secret value",
                     })
 
     return issues
@@ -421,6 +447,7 @@ def check_observability(config: dict) -> list[dict]:
             "severity": "LOW",
             "message": "Observability logs not enabled",
             "fix": 'Add: "observability": { "logs": { "enabled": true } }',
+            "detection": "CONFIG",
         })
 
     return issues
@@ -437,6 +464,7 @@ def check_smart_placement(config: dict) -> list[dict]:
             "severity": "LOW",
             "message": "Smart Placement not enabled",
             "fix": 'Add: "placement": { "mode": "smart" }',
+            "detection": "CONFIG",
         })
 
     return issues
@@ -503,6 +531,8 @@ def check_bundle_size(working_dir: str, config: dict) -> list[dict]:
                 "severity": "CRITICAL",
                 "message": f"Estimated bundle size ~{estimated_size_kb:.0f}KB exceeds 10MB limit",
                 "fix": "Reduce bundle size: remove unused deps, use tree-shaking, split into service bindings",
+                "detection": "HEURISTIC",
+                "verify": "Run 'npx wrangler deploy --dry-run' to get actual bundle size",
             })
         elif estimated_size_kb > FREE_LIMIT_KB:
             if usage_model == "bundled":
@@ -511,6 +541,8 @@ def check_bundle_size(working_dir: str, config: dict) -> list[dict]:
                     "severity": "HIGH",
                     "message": f"Estimated bundle size ~{estimated_size_kb:.0f}KB exceeds Free tier 1MB limit",
                     "fix": 'Either reduce bundle or add "usage_model": "unbound" for 10MB limit',
+                    "detection": "HEURISTIC",
+                    "verify": "Run 'npx wrangler deploy --dry-run' to get actual bundle size",
                 })
             else:
                 issues.append({
@@ -518,6 +550,7 @@ def check_bundle_size(working_dir: str, config: dict) -> list[dict]:
                     "severity": "LOW",
                     "message": f"Bundle size ~{estimated_size_kb:.0f}KB (within Standard tier limit)",
                     "fix": "Consider optimization for faster cold starts",
+                    "detection": "HEURISTIC",
                 })
         elif estimated_size_kb > FREE_LIMIT_KB * 0.8:  # 80% warning
             issues.append({
@@ -525,6 +558,7 @@ def check_bundle_size(working_dir: str, config: dict) -> list[dict]:
                 "severity": "LOW",
                 "message": f"Bundle size ~{estimated_size_kb:.0f}KB approaching 1MB Free tier limit",
                 "fix": "Monitor bundle growth; consider code splitting",
+                "detection": "HEURISTIC",
             })
 
     # Warn about specific heavy dependencies
@@ -535,6 +569,7 @@ def check_bundle_size(working_dir: str, config: dict) -> list[dict]:
                 "severity": "HIGH",
                 "message": f"Package '{pkg}' uses native bindings - won't work on Workers",
                 "fix": "Use Cloudflare Images API instead",
+                "detection": "STATIC",
             })
         elif pkg in ["aws-sdk", "@aws-sdk"]:
             issues.append({
@@ -542,6 +577,7 @@ def check_bundle_size(working_dir: str, config: dict) -> list[dict]:
                 "severity": "MEDIUM",
                 "message": f"Package '{pkg}' is ~{size}KB - very heavy for Workers",
                 "fix": "Use R2 S3-compatible API or specific lightweight clients",
+                "detection": "STATIC",
             })
 
     return issues
@@ -560,6 +596,7 @@ def check_cpu_limits(config: dict) -> list[dict]:
             "severity": "MEDIUM",
             "message": "No cpu_ms limit configured - loops could run unchecked",
             "fix": 'Add "limits": { "cpu_ms": 100 } to kill runaway loops',
+            "detection": "CONFIG",
         })
     elif cpu_ms > 10000:
         issues.append({
@@ -567,6 +604,7 @@ def check_cpu_limits(config: dict) -> list[dict]:
             "severity": "LOW",
             "message": f"High cpu_ms limit ({cpu_ms}ms) - consider lower for API endpoints",
             "fix": "Use 100-500ms for APIs, 5000-10000ms for heavy processing",
+            "detection": "CONFIG",
         })
 
     return issues
@@ -583,6 +621,7 @@ def check_deprecated_site_config(config: dict) -> list[dict]:
             "severity": "MEDIUM",
             "message": "Deprecated [site] configuration detected - use [assets] instead",
             "fix": 'Replace [site] with "assets": { "directory": "./dist", "html_handling": "auto-trailing-slash" }',
+            "detection": "CONFIG",
         })
 
     # Check for deprecated pages_build_output_dir
@@ -592,13 +631,22 @@ def check_deprecated_site_config(config: dict) -> list[dict]:
             "severity": "MEDIUM",
             "message": "Deprecated pages_build_output_dir detected - use [assets] instead",
             "fix": 'Replace with "assets": { "directory": "./dist", "not_found_handling": "single-page-application" }',
+            "detection": "CONFIG",
         })
 
     return issues
 
 
 def check_r2_infrequent_access(working_dir: str, config: dict) -> list[dict]:
-    """Check for R2 Infrequent Access storage usage with reads (NEW v1.4.0)."""
+    """Check for R2 Infrequent Access storage usage with reads (NEW v1.4.0).
+
+    NOTE: This is a HEURISTIC check based on bucket naming conventions.
+    We cannot determine actual storage class from code or wrangler.toml.
+    Storage class is configured in the Cloudflare dashboard.
+
+    Common false positive: bucket named "archive" for archiving data,
+    but actually using Standard storage class.
+    """
     issues = []
     src_dir = Path(working_dir) / "src"
 
@@ -610,8 +658,20 @@ def check_r2_infrequent_access(working_dir: str, config: dict) -> list[dict]:
     if not r2_buckets:
         return issues
 
-    # Scan for .get() calls on R2 buckets - could indicate IA trap
-    # This is a heuristic - we can't know storage class from code
+    # Only check buckets with names strongly suggesting IA storage
+    # "archive" alone is too common a semantic term - require "ia" or "infrequent"
+    ia_keywords = ["infrequent", "-ia", "_ia", "ia-", "ia_"]  # More specific keywords
+
+    ia_suspect_buckets = []
+    for bucket in r2_buckets:
+        bucket_name = bucket.get("bucket_name", "").lower()
+        if any(kw in bucket_name for kw in ia_keywords):
+            ia_suspect_buckets.append(bucket_name)
+
+    if not ia_suspect_buckets:
+        return issues
+
+    # Scan for .get() calls only if we have IA-suspect buckets
     for ts_file in src_dir.rglob("*.ts"):
         if "node_modules" in str(ts_file):
             continue
@@ -638,17 +698,16 @@ def check_r2_infrequent_access(working_dir: str, config: dict) -> list[dict]:
                 has_cache_control = 'Cache-Control' in content or 'cacheControl' in content
 
                 if not has_cache and not has_cache_control:
-                    # Only warn if bucket name suggests IA (cold, archive, backup, ia)
-                    for bucket in r2_buckets:
-                        bucket_name = bucket.get("bucket_name", "").lower()
-                        if any(kw in bucket_name for kw in ["cold", "archive", "backup", "ia", "infrequent"]):
-                            issues.append({
-                                "id": "BUDGET009",
-                                "severity": "HIGH",
-                                "message": f"R2 bucket '{bucket_name}' may use Infrequent Access - reads at {relative_path}:{line_num} could incur $9+ minimum charge",
-                                "fix": "Use Standard storage for any bucket with read operations. IA is only safe for write-only cold storage.",
-                            })
-                            break
+                    for bucket_name in ia_suspect_buckets:
+                        issues.append({
+                            "id": "BUDGET009",
+                            "severity": "INFO",  # Downgraded from HIGH - this is speculative
+                            "message": f"R2 bucket '{bucket_name}' name suggests Infrequent Access - verify storage class",
+                            "fix": "If using IA storage: switch to Standard for buckets with reads. IA is only safe for write-only.",
+                            "detection": "HEURISTIC",
+                            "verify": f"Check bucket storage class in CF dashboard: R2 > {bucket_name} > Settings",
+                        })
+                        break
 
         except Exception:
             pass
@@ -681,6 +740,9 @@ def check_d1_query_patterns(working_dir: str) -> list[dict]:
     for ts_file in src_dir.rglob("*.ts"):
         if "node_modules" in str(ts_file):
             continue
+        # Skip test files - they often use unbounded queries for setup/teardown
+        if is_test_file(str(ts_file)):
+            continue
 
         try:
             content = ts_file.read_text()
@@ -708,11 +770,17 @@ def check_d1_query_patterns(working_dir: str) -> list[dict]:
                     if 'LIMIT' in rest:
                         continue  # LIMIT found later
 
+                # Check for single-row patterns (WHERE id = ?) - these are safe
+                match_text = match.group(0)
+                if re.search(r'WHERE\s+\w*id\s*=', match_text, re.IGNORECASE):
+                    continue  # Single row lookup by ID is safe
+
                 issues.append({
                     "id": "QUERY001",
                     "severity": "HIGH",
                     "message": f"SELECT * without LIMIT at {relative_path}:{line_num} - potential row read explosion",
                     "fix": "Add LIMIT clause or use pagination (TRAP-D1-005)",
+                    "detection": "STATIC",
                 })
 
             # QUERY005: Drizzle .all() or .findMany() without .limit()
@@ -734,6 +802,7 @@ def check_d1_query_patterns(working_dir: str) -> list[dict]:
                         "severity": "HIGH",
                         "message": f"Drizzle {desc} at {relative_path}:{line_num} - unbounded result set",
                         "fix": "Add .limit() to prevent row read explosion (TRAP-D1-006)",
+                        "detection": "STATIC",
                     })
 
         except Exception:
@@ -795,8 +864,105 @@ def check_r2_cache_patterns(working_dir: str) -> list[dict]:
                             "severity": "MEDIUM",
                             "message": f"R2.get() on request path without cache at {relative_path}:{line_num}",
                             "fix": "Wrap with caches.default for edge caching (TRAP-R2-006)",
+                            "detection": "STATIC",
                         })
                         break  # One warning per file
+
+        except Exception:
+            pass
+
+    # Deduplicate
+    seen = set()
+    unique_issues = []
+    for issue in issues:
+        key = (issue["id"], issue["message"])
+        if key not in seen:
+            seen.add(key)
+            unique_issues.append(issue)
+
+    return unique_issues
+
+
+def check_ai_patterns(working_dir: str, config: dict) -> list[dict]:
+    """Check for Workers AI usage patterns (NEW v1.6.0).
+
+    AI001: Expensive model usage without cost awareness
+    AI002: AI binding without cache wrapper (consider caching)
+    """
+    issues = []
+    src_dir = Path(working_dir) / "src"
+
+    if not src_dir.exists():
+        return issues
+
+    # Check if project has AI binding
+    ai_binding = config.get("ai", {})
+    if not ai_binding and "[ai]" not in str(config):
+        return issues
+
+    # Expensive models that should trigger cost warning
+    expensive_models = [
+        "llama-3.1-405b",
+        "llama-3.3-70b",
+        "deepseek-r1",
+        "claude",  # If using AI Gateway to Claude
+    ]
+
+    for ts_file in src_dir.rglob("*.ts"):
+        if "node_modules" in str(ts_file):
+            continue
+
+        try:
+            content = ts_file.read_text()
+            relative_path = ts_file.relative_to(working_dir)
+
+            # Extract suppressions from this file
+            suppressions = extract_suppressions(content)
+
+            # AI001: Check for expensive models
+            for model in expensive_models:
+                if model in content.lower():
+                    # Find the exact line
+                    for line_num, line in enumerate(content.split('\n'), 1):
+                        if model in line.lower():
+                            if is_suppressed(suppressions, line_num, "AI001"):
+                                debug_log(f"Suppressed AI001 at {relative_path}:{line_num}")
+                                continue
+
+                            issues.append({
+                                "id": "AI001",
+                                "severity": "HIGH",
+                                "message": f"Expensive AI model '{model}' at {relative_path}:{line_num}",
+                                "fix": "Consider smaller model or implement request batching (TRAP-AI-001)",
+                                "detection": "STATIC",
+                            })
+                            break
+
+            # AI002: Check for AI.run without cache wrapper
+            has_ai_run = re.search(r'\.run\s*\(\s*["\']@cf/', content)
+            has_cache_check = any([
+                'caches.default' in content,
+                'cache.match' in content,
+                'KV' in content and '.get' in content,  # Using KV as cache
+            ])
+
+            if has_ai_run and not has_cache_check:
+                # Find the first AI.run call
+                for line_num, line in enumerate(content.split('\n'), 1):
+                    if re.search(r'\.run\s*\(\s*["\']@cf/', line):
+                        if is_suppressed(suppressions, line_num, "AI002"):
+                            debug_log(f"Suppressed AI002 at {relative_path}:{line_num}")
+                            continue
+
+                        issues.append({
+                            "id": "AI002",
+                            "severity": "MEDIUM",
+                            "message": f"AI inference without cache at {relative_path}:{line_num}",
+                            "fix": "Consider caching AI responses for repeated prompts (reduces cost + latency)",
+                            "detection": "HEURISTIC",
+                            "verify": "Check if prompts are dynamic (caching may not apply)",
+                        })
+                        break
 
         except Exception:
             pass
@@ -857,6 +1023,8 @@ def check_observability_extended(config: dict, working_dir: str) -> list[dict]:
             "severity": "MEDIUM",
             "message": "Logs enabled but no export destination detected",
             "fix": "Configure Axiom/Better Stack export or add tail_consumers for log forwarding",
+            "detection": "HEURISTIC",
+            "verify": "Check if exports are configured in Cloudflare dashboard instead of code",
         })
 
     # OBS003: High sampling rate on potentially high-volume worker
@@ -875,6 +1043,7 @@ def check_observability_extended(config: dict, working_dir: str) -> list[dict]:
                 "severity": "INFO",
                 "message": f"100% sampling rate on worker with queue/routes - may generate high log volume",
                 "fix": "Consider head_sampling_rate: 0.1-0.5 for production (see /cf-logs --analyze)",
+                "detection": "CONFIG",
             })
 
     return issues
@@ -888,7 +1057,7 @@ def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
     if not src_dir.exists():
         return issues
 
-    # Patterns to detect
+    # Patterns to detect: (pattern, rule_id, severity, message, fix, detection_type)
     loop_patterns = [
         # D1 queries in loops
         (
@@ -897,6 +1066,7 @@ def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
             "CRITICAL",
             "D1 query inside loop - N+1 cost explosion",
             "Use db.batch() for bulk operations (TRAP-D1-001)",
+            "STATIC",
         ),
         # R2 writes in loops
         (
@@ -905,6 +1075,7 @@ def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
             "HIGH",
             "R2 write inside loop - Class A operation explosion",
             "Buffer writes or use multipart upload (TRAP-R2-001)",
+            "STATIC",
         ),
         # setInterval without clear pattern
         (
@@ -913,6 +1084,7 @@ def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
             "MEDIUM",
             "setInterval detected - verify termination condition exists",
             "Use state.storage.setAlarm() in Durable Objects for hibernation",
+            "STATIC",
         ),
         # Unbounded while loops
         (
@@ -921,6 +1093,7 @@ def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
             "CRITICAL",
             "Unbounded loop detected - could run until CPU limit",
             "Add explicit break condition and iteration limit",
+            "STATIC",
         ),
         # Self-fetch patterns
         (
@@ -929,6 +1102,7 @@ def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
             "CRITICAL",
             "Worker fetching own URL - potential infinite recursion",
             "Add X-Recursion-Depth middleware (see loop-breaker skill)",
+            "STATIC",
         ),
         # Recursive function without depth
         (
@@ -937,11 +1111,15 @@ def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
             "HIGH",
             "Recursive function detected - verify depth limit exists",
             "Add maxDepth parameter and check before recursing",
+            "HEURISTIC",
         ),
     ]
 
     for ts_file in src_dir.rglob("*.ts"):
         if "node_modules" in str(ts_file):
+            continue
+        # Skip test files - they often have patterns for testing edge cases
+        if is_test_file(str(ts_file)):
             continue
 
         try:
@@ -951,7 +1129,7 @@ def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
             # Extract suppressions from this file
             suppressions = extract_suppressions(content)
 
-            for pattern, rule_id, severity, message, fix in loop_patterns:
+            for pattern, rule_id, severity, message, fix, detection in loop_patterns:
                 matches = list(re.finditer(pattern, content, re.MULTILINE | re.DOTALL))
                 for match in matches:
                     # Get line number
@@ -976,12 +1154,17 @@ def scan_source_for_loop_patterns(working_dir: str) -> list[dict]:
                         if re.search(r'(depth|maxDepth|level)\s*[:<>=]|if\s*\(\s*(depth|maxDepth|level)', context, re.IGNORECASE):
                             continue  # Has depth limiting, skip
 
-                    issues.append({
+                    issue = {
                         "id": rule_id,
                         "severity": severity,
                         "message": f"{message} at {relative_path}:{line_num}",
                         "fix": fix,
-                    })
+                        "detection": detection,
+                    }
+                    # Add verify hint for heuristic detections
+                    if detection == "HEURISTIC":
+                        issue["verify"] = "Check code manually to confirm this pattern"
+                    issues.append(issue)
         except Exception:
             pass
 
@@ -1103,6 +1286,7 @@ def check_queue_dlq_comprehensive(config: dict) -> list[dict]:
                     "severity": "HIGH",
                     "message": f"Queue '{queue_name}' missing dead_letter_queue",
                     "fix": f'Add: "dead_letter_queue": "{dlq_suggestion}"',
+                    "detection": "CONFIG",
                 })
 
             # Check for high retries (cost multiplier)
@@ -1113,6 +1297,7 @@ def check_queue_dlq_comprehensive(config: dict) -> list[dict]:
                     "severity": "MEDIUM",
                     "message": f"Queue '{queue_name}' has max_retries={max_retries} (each retry costs $0.40/M)",
                     "fix": 'Set max_retries to 1-2 if consumer is idempotent',
+                    "detection": "CONFIG",
                 })
 
             # Check for missing max_concurrency (resilience)
@@ -1122,6 +1307,7 @@ def check_queue_dlq_comprehensive(config: dict) -> list[dict]:
                     "severity": "MEDIUM",
                     "message": f"Queue '{queue_name}' has no max_concurrency limit",
                     "fix": 'Add "max_concurrency": 10 to prevent overload',
+                    "detection": "CONFIG",
                 })
 
     return issues
@@ -1172,67 +1358,169 @@ def run_audit(config: dict, working_dir: str = "") -> list[dict]:
         # Extended observability checks (NEW v1.5.0)
         issues.extend(check_observability_extended(config, working_dir))
 
+        # AI usage pattern checks (NEW v1.6.0)
+        issues.extend(check_ai_patterns(working_dir, config))
+
     # Apply .pre-deploy-ignore suppressions
     issues = filter_ignored_issues(issues, ignore_rules)
 
     return issues
 
 
-def format_issues(issues: list[dict]) -> str:
-    """Format issues for display."""
+def format_issues(issues: list[dict], blocking_rules: set[str] = None) -> str:
+    """Format issues for display with self-documenting output for AI consumption.
+
+    Args:
+        issues: List of issue dictionaries
+        blocking_rules: Set of rule IDs that actually block deployment.
+                       If None, falls back to CRITICAL severity for display.
+    """
     if not issues:
         return ""
 
-    lines = ["", "⚠️  PRE-DEPLOY VALIDATION ISSUES FOUND", "=" * 45, ""]
+    # Separate issues based on what actually blocks
+    if blocking_rules is not None:
+        # Use the actual blocking rules set
+        blocking_issues = [i for i in issues if i.get("id") in blocking_rules]
+        warning_issues = [i for i in issues if i.get("id") not in blocking_rules and i.get("id") != "COST_SIM"]
+    else:
+        # Fallback: use severity (legacy behavior)
+        blocking_issues = [i for i in issues if i.get("severity") == "CRITICAL"]
+        warning_issues = [i for i in issues if i.get("severity") != "CRITICAL" and i.get("id") != "COST_SIM"]
 
-    # Separate loop safety issues for special section
-    loop_issues = [i for i in issues if i.get("id", "").startswith("LOOP")]
-    other_issues = [i for i in issues if not i.get("id", "").startswith("LOOP") and i.get("id") != "COST_SIM"]
     cost_sim = [i for i in issues if i.get("id") == "COST_SIM"]
 
-    # Format loop safety section if present
-    if loop_issues:
-        lines.append("🔄 LOOP SAFETY (Billing Protection)")
-        lines.append("-" * 40)
-        for issue in loop_issues:
-            emoji = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🔵"}.get(issue["severity"], "⚪")
-            lines.append(f"   {emoji} [{issue['id']}] {issue['message']}")
-            lines.append(f"      Fix: {issue['fix']}")
-        lines.append("")
+    lines = []
 
-    # Format cost simulation if present
+    # Self-documenting header explaining blocking behavior
+    lines.append("")
+    lines.append("━" * 60)
+    lines.append("⚠️  CLOUDFLARE PRE-DEPLOY VALIDATION")
+    lines.append("━" * 60)
+    lines.append("")
+
+    # Updated severity guide to match two-tier system
+    if blocking_rules:
+        lines.append("BLOCKING RULES (only these can stop deployment):")
+        lines.append("  SEC001, LOOP005, LOOP007 → irreversible/catastrophic")
+        lines.append("")
+    lines.append("SEVERITY LEVELS:")
+    lines.append("  🔴 CRITICAL = Serious issue (blocks if in blocking rules)")
+    lines.append("  🟠 HIGH     = Important warning - review recommended")
+    lines.append("  🟡 MEDIUM   = Advisory - consider addressing")
+    lines.append("  🔵 LOW/INFO = Informational")
+    lines.append("")
+    lines.append("DETECTION TYPES (confidence levels):")
+    lines.append("  [CONFIG]    = Found in wrangler config - definite issue")
+    lines.append("  [STATIC]    = Code pattern match - high confidence")
+    lines.append("  [HEURISTIC] = Inferred from names/patterns - MAY BE FALSE POSITIVE")
+    lines.append("")
+    lines.append("━" * 60)
+
+    # Summary counts
+    blocking_count = len(blocking_issues)
+    warning_count = len(warning_issues)
+    lines.append(f"SUMMARY: {blocking_count} blocking, {warning_count} warnings")
+    if blocking_count > 0:
+        lines.append("ACTION: Deployment BLOCKED - fix or suppress blocking issues")
+    else:
+        lines.append("ACTION: Deployment ALLOWED (warnings only)")
+    lines.append("━" * 60)
+    lines.append("")
+
+    # BLOCKING ISSUES section
+    if blocking_issues:
+        lines.append("🛑 BLOCKING ISSUES (deployment will fail):")
+        lines.append("-" * 50)
+        for issue in blocking_issues:
+            detection = issue.get("detection", "STATIC")
+            lines.append(f"   🔴 [{issue['id']}] [{detection}] {issue['severity']}")
+            lines.append(f"      {issue['message']}")
+            lines.append(f"      Fix: {issue['fix']}")
+            if detection == "HEURISTIC":
+                verify = issue.get("verify", "Check code manually to confirm")
+                lines.append(f"      Verify: {verify}")
+            suppress = issue.get("suppress", f"// @pre-deploy-ok {issue['id']}")
+            lines.append(f"      Suppress: {suppress}")
+            lines.append("")
+
+    # NON-BLOCKING WARNINGS section
+    if warning_issues:
+        lines.append("⚠️  NON-BLOCKING WARNINGS (deployment allowed):")
+        lines.append("-" * 50)
+        for issue in warning_issues:
+            emoji = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🔵", "INFO": "🔵"}.get(issue["severity"], "⚪")
+            detection = issue.get("detection", "STATIC")
+            lines.append(f"   {emoji} [{issue['id']}] [{detection}] {issue['severity']}")
+            lines.append(f"      {issue['message']}")
+            lines.append(f"      Fix: {issue['fix']}")
+            if detection == "HEURISTIC":
+                verify = issue.get("verify", "Check code manually to confirm")
+                lines.append(f"      Verify: {verify}")
+            lines.append("")
+
+    # Cost simulation section (if present)
     if cost_sim:
-        lines.append("💰 COST SIMULATION")
-        lines.append("-" * 40)
+        lines.append("💰 COST SIMULATION (informational):")
+        lines.append("-" * 50)
         for issue in cost_sim:
             lines.append(f"   {issue['message']}")
             lines.append(f"   Recommendation: {issue['fix']}")
         lines.append("")
 
-    # Format other issues by severity
-    by_severity = {"CRITICAL": [], "HIGH": [], "MEDIUM": [], "LOW": [], "INFO": []}
-    for issue in other_issues:
-        severity = issue.get("severity", "MEDIUM")
-        by_severity.setdefault(severity, []).append(issue)
-
-    for severity in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]:
-        severity_issues = by_severity.get(severity, [])
-        if severity_issues:
-            emoji = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🔵", "INFO": "ℹ️"}[severity]
-            lines.append(f"{emoji} {severity}")
-            for issue in severity_issues:
-                lines.append(f"   [{issue['id']}] {issue['message']}")
-                lines.append(f"   Fix: {issue['fix']}")
-                lines.append("")
-
     return "\n".join(lines)
 
 
+def check_bypass_in_command(command: str) -> bool:
+    """Check if bypass env var is set in the command string itself.
+
+    When user runs: SKIP_PREDEPLOY_CHECK=1 npx wrangler deploy
+    The env var is set for wrangler, not for the hook process.
+    We detect the user's intent by parsing the command.
+    """
+    bypass_patterns = [
+        r'\bSKIP_PREDEPLOY_CHECK\s*=\s*["\']?1["\']?',
+        r'\bSKIP_PREDEPLOY_CHECK\s*=\s*["\']?true["\']?',
+        r'\bSKIP_PREDEPLOY_CHECK\s*=\s*["\']?yes["\']?',
+    ]
+    for pattern in bypass_patterns:
+        if re.search(pattern, command, re.IGNORECASE):
+            return True
+    return False
+
+
 def main():
-    """Main hook function."""
-    # Check for environment variable bypass
+    """Main hook function.
+
+    TWO-TIER BLOCKING SYSTEM (v1.6.0):
+
+    TIER 1 - BLOCKING RULES (exit 2):
+    Only these rules block deployment. They represent irreversible or
+    catastrophic outcomes that justify interrupting the user:
+    - SEC001: Plaintext secrets → credential leak (irreversible)
+    - LOOP005: Worker self-recursion → infinite billing chain
+    - LOOP007: Unbounded while(true) → billing explosion
+
+    TIER 2 - WARNING RULES (exit 0):
+    Everything else is a warning. Deployment proceeds, but Claude sees
+    the output and can present issues to the user. This respects user
+    agency while ensuring awareness.
+
+    Philosophy: Block = "Request for Agent Intervention", not hard stop.
+    In Claude Code context, exit 2 returns control to Claude, which can
+    then interact with the user about the issue.
+    """
+    # BLOCKING RULES - only these specific rules cause exit 2
+    # Criteria: high-confidence detection + catastrophic/irreversible outcome
+    BLOCKING_RULES = {
+        "SEC001",   # Plaintext secrets → credential leak (irreversible)
+        "LOOP005",  # Worker self-recursion → infinite billing chain
+        "LOOP007",  # Unbounded while(true) → billing explosion
+    }
+
+    # Check for environment variable bypass (in hook's environment)
     if os.environ.get("SKIP_PREDEPLOY_CHECK", "").lower() in ("1", "true", "yes"):
-        debug_log("SKIP_PREDEPLOY_CHECK is set, bypassing validation")
+        debug_log("SKIP_PREDEPLOY_CHECK is set in environment, bypassing validation")
         sys.exit(0)
 
     # Read input from stdin
@@ -1251,6 +1539,12 @@ def main():
         sys.exit(0)
 
     command = tool_input.get("command", "")
+
+    # Check for bypass in command string (user intent detection)
+    # This handles: SKIP_PREDEPLOY_CHECK=1 npx wrangler deploy
+    if check_bypass_in_command(command):
+        debug_log(f"SKIP_PREDEPLOY_CHECK found in command, bypassing validation: {command}")
+        sys.exit(0)
 
     # Only check wrangler deploy commands
     if not is_wrangler_deploy(command):
@@ -1283,38 +1577,64 @@ def main():
         debug_log("No issues found, allowing deploy")
         sys.exit(0)
 
-    # Check severity (LOOP issues with CRITICAL are especially dangerous)
-    critical_count = sum(1 for i in issues if i.get("severity") == "CRITICAL")
-    high_count = sum(1 for i in issues if i.get("severity") == "HIGH")
-    loop_critical = sum(1 for i in issues if i.get("id", "").startswith("LOOP") and i.get("severity") == "CRITICAL")
+    # Separate blocking issues from warnings
+    blocking_issues = [i for i in issues if i.get("id") in BLOCKING_RULES]
+    warning_issues = [i for i in issues if i.get("id") not in BLOCKING_RULES]
 
-    # Format and output issues
-    output = format_issues(issues)
+    # Count by severity for summary display
+    high_count = sum(1 for i in warning_issues if i.get("severity") in ("CRITICAL", "HIGH"))
+    medium_count = sum(1 for i in warning_issues if i.get("severity") == "MEDIUM")
 
-    # Add suppression hint
-    suppression_hint = "\n💡 To suppress known-safe patterns:\n"
-    suppression_hint += "   • Inline: // @pre-deploy-ok RULE_ID\n"
-    suppression_hint += "   • Project: Add rule to .pre-deploy-ignore file\n"
-    suppression_hint += "   • Emergency: SKIP_PREDEPLOY_CHECK=1 npx wrangler deploy\n"
+    # Format and output issues (pass BLOCKING_RULES for proper categorization)
+    output = format_issues(issues, BLOCKING_RULES)
 
-    if critical_count > 0:
-        output += f"\n🛑 DEPLOYMENT BLOCKED: {critical_count} critical issue(s) found.\n"
-        if loop_critical > 0:
-            output += f"   ⚠️  {loop_critical} loop safety issue(s) could cause billing explosion.\n"
-        output += "Fix critical issues before deploying.\n"
-        output += suppression_hint
+    # DECISION: Block or Allow?
+    if blocking_issues:
+        # TIER 1: These specific rules block deployment
+        # Format agent-readable blocking message
+        output += "\n"
+        output += "━" * 60 + "\n"
+        output += "🛑 DEPLOYMENT INTERRUPTED\n"
+        output += "━" * 60 + "\n"
+        output += "\n"
+        output += f"WHAT: {len(blocking_issues)} blocking issue(s) detected\n"
+        output += "WHY:  These patterns can cause irreversible damage or billing explosion\n"
+        output += "\n"
+        output += "BLOCKING ISSUES:\n"
+        for issue in blocking_issues:
+            rule_id = issue.get("id", "UNKNOWN")
+            output += f"  • {rule_id}: {issue.get('message', 'No message')}\n"
+        output += "\n"
+        output += "OPTIONS FOR CLAUDE/USER:\n"
+        output += "  1. FIX: Address the issues listed above (recommended)\n"
+        output += "  2. SUPPRESS: Add inline comment: // @pre-deploy-ok RULE_ID\n"
+        output += "  3. OVERRIDE: Ask user to confirm deployment despite risks\n"
+        output += "     → Run: SKIP_PREDEPLOY_CHECK=1 npx wrangler deploy\n"
+        output += "\n"
+        if warning_issues:
+            output += f"ALSO: {len(warning_issues)} additional warnings (non-blocking)\n"
+        output += "━" * 60 + "\n"
+
         print(output, file=sys.stderr)
-        sys.exit(2)  # Block deployment
-    elif high_count > 0:
-        output += f"\n⚠️  WARNING: {high_count} high priority issue(s) found.\n"
-        output += "Consider fixing before deploying to production.\n"
-        output += suppression_hint
-        print(output, file=sys.stderr)
-        sys.exit(0)  # Warn but allow
+        sys.exit(2)  # Block deployment - returns control to Claude
     else:
-        output += "\nℹ️  Minor issues found. Deployment allowed.\n"
+        # TIER 2: All issues are warnings - deployment proceeds
+        output += "\n"
+        output += "━" * 60 + "\n"
+        output += "✅ DEPLOYMENT ALLOWED (with warnings)\n"
+        output += "━" * 60 + "\n"
+        output += "\n"
+        if high_count > 0:
+            output += f"⚠️  {high_count} high-priority warning(s) detected\n"
+            output += "   Consider reviewing before production deployment.\n"
+        if medium_count > 0:
+            output += f"ℹ️  {medium_count} advisory issue(s) detected\n"
+        output += "\n"
+        output += "Deployment proceeding. Review warnings above if needed.\n"
+        output += "━" * 60 + "\n"
+
         print(output, file=sys.stderr)
-        sys.exit(0)  # Allow
+        sys.exit(0)  # Allow deployment
 
 
 if __name__ == "__main__":

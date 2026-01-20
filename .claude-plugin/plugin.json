@@ -1,7 +1,7 @@
 {
   "name": "cloudflare-engineer",
-  "version": "1.5.1",
-  "description": "Platform Architect capabilities for Cloudflare - D1 Query Optimization, Cloudflare Workflows, External Logging (Axiom/Better Stack), Python Workers, Zero Trust Tooling, and R2 Cost Protection. Includes Edge-Native Constraints, Vibecoder Proactive Safeguards, Loop Protection, billing safety, recursion guards, queue safety, Privacy Filters, and cost simulation.",
+  "version": "1.6.0",
+  "description": "Platform Architect capabilities for Cloudflare - D1 Query Optimization, Cloudflare Workflows, External Logging (Axiom/Better Stack), Python Workers, Zero Trust Tooling, R2 Cost Protection, and AI Cost Detection. Includes Edge-Native Constraints, Vibecoder Proactive Safeguards, Loop Protection, billing safety, recursion guards, queue safety, Privacy Filters, cost simulation, and session-aware hooks.",
   "author": {
     "name": "Little Bear Apps",
     "email": "hello@littlebearapps.com"
@@ -40,6 +40,9 @@
     "betterstack",
     "python-workers",
     "privacy",
-    "tunnel"
+    "tunnel",
+    "workers-ai",
+    "ai-cost",
+    "session-hooks"
   ]
 }

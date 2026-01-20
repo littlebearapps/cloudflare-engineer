@@ -1,6 +1,17 @@
 {
-  "description": "Pre-deploy validation hook for Cloudflare Workers - validates wrangler config before deployment",
+  "description": "Cloudflare Engineer hooks: project detection, pre-deploy validation, and post-deploy verification",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/session-start.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "hooks": [
@@ -8,6 +19,18 @@
             "type": "command",
             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/pre-deploy-check.py",
             "timeout": 30
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/post-deploy-verify.py",
+            "timeout": 10
           }
         ],
         "matcher": "Bash"
