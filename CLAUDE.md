@@ -2,7 +2,7 @@
 
 ## Overview
 
-Claude Code plugin providing **Platform Architect** capabilities for Cloudflare with **D1 Query Optimization**, **Cloudflare Workflows**, **External Logging**, **Python Workers**, **Zero Trust Tooling**, and **R2 Cost Protection** (v1.5.1).
+Claude Code plugin providing **Platform Architect** capabilities for Cloudflare with **D1 Query Optimization**, **Cloudflare Workflows**, **External Logging**, **Python Workers**, **Zero Trust Tooling**, **R2 Cost Protection**, and **AI Cost Detection** (v1.6.0).
 
 **GitHub**: https://github.com/littlebearapps/cloudflare-engineer
 **Local**: `~/.claude/local-marketplace/cloudflare-engineer/`
@@ -49,7 +49,9 @@ cloudflare-engineer/
 │   └── ...
 ├── hooks/
 │   ├── hooks.json              # Hook configuration
-│   └── pre-deploy-check.py     # Validation + Performance Budgeter + Loop Detection + Query Checks
+│   ├── session-start.py        # CF project detection + capability announcement (NEW v1.6.0)
+│   ├── post-deploy-verify.py   # Deployment verification + next steps (NEW v1.6.0)
+│   └── pre-deploy-check.py     # Validation + Performance Budgeter + Loop Detection + Query + AI Checks
 ├── COST_SENSITIVE_RESOURCES.md # Cost trap catalog including loop + privacy traps
 └── README.md                   # User documentation
 ```
@@ -78,7 +80,7 @@ mkdir -p skills/new-skill
 
 ### New Hook
 1. Add Python/bash script to `hooks/`
-2. Register in `hooks/hooks.json` under PreToolUse/PostToolUse
+2. Register in `hooks/hooks.json` under SessionStart/PreToolUse/PostToolUse
 
 ## Pre-Deploy Hook Development
 
@@ -87,11 +89,18 @@ mkdir -p skills/new-skill
 **Input**: JSON via stdin with `tool_name` and `tool_input.command`
 
 **Output**:
-- Exit 0 = allow
-- Exit 2 = block
-- Print issues to stdout (parsed by Claude Code)
+- Exit 0 = allow (includes HIGH/MEDIUM/LOW/INFO warnings)
+- Exit 2 = block (CRITICAL issues only)
+- Self-documenting output with severity guide and detection types
 
-**Bypass**: Set `SKIP_PREDEPLOY_CHECK=1` environment variable to skip validation entirely.
+**Detection Types** (confidence levels):
+- `[CONFIG]` - Found in wrangler.toml - definite issue
+- `[STATIC]` - Code pattern match - high confidence
+- `[HEURISTIC]` - Inferred from names/patterns - may be false positive
+
+**Test File Exclusion**: Automatically skips `*.test.ts`, `*.spec.ts`, `__tests__/`, etc.
+
+**Bypass**: Set `SKIP_PREDEPLOY_CHECK=1` in environment OR command string (session-only).
 
 **Suppression Comments**: Users can suppress specific rules with inline comments:
 ```typescript
@@ -158,49 +167,45 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 | `skills/custom-hostnames/SKILL.md` | SSL for SaaS patterns |
 | `skills/media-streaming/SKILL.md` | Stream & Images patterns |
 | `skills/implement/SKILL.md` | Code scaffolding + Queue Safety patterns |
-| `hooks/pre-deploy-check.py` | Validation + Performance Budgeter + Loop Detection + Query Checks |
-| `COST_SENSITIVE_RESOURCES.md` | Cost trap catalog with TRAP-LOOP-*, TRAP-PRIVACY-* entries |
+| `hooks/session-start.py` | CF project detection + fingerprint caching (NEW v1.6.0) |
+| `hooks/post-deploy-verify.py` | Deployment verification + next steps (NEW v1.6.0) |
+| `hooks/pre-deploy-check.py` | Validation + Performance Budgeter + Loop + Query + AI Checks |
+| `COST_SENSITIVE_RESOURCES.md` | Cost trap catalog with TRAP-LOOP-*, TRAP-PRIVACY-*, TRAP-AI-* entries |
 | `commands/cf-audit.md` | Audit + Resource Discovery command |
 | `commands/cf-pattern.md` | Pattern application command |
 | `commands/cf-logs.md` | External logging configuration (NEW v1.5.0) |
 
 ## Validation Rule IDs
 
-| ID | Severity | Check |
-|----|----------|-------|
-| SEC001 | CRITICAL | Plaintext secrets in config |
-| RES001 | HIGH | Queue without DLQ |
-| RES002 | MEDIUM | Missing max_concurrency |
-| COST001 | MEDIUM | max_retries > 2 |
-| PERF001 | LOW | smart_placement disabled |
-| PERF004 | LOW | observability.logs disabled |
-| PERF005 | CRITICAL/HIGH | Bundle size exceeds tier limits |
-| PERF006 | HIGH | Incompatible native packages |
-| ARCH001 | MEDIUM | Deprecated [site] or pages_build_output_dir |
-| BUDGET001-006 | INFO-HIGH | Budget enforcement triggers |
-| BUDGET007 | CRITICAL | D1 row read explosion - unindexed queries |
-| BUDGET008 | MEDIUM | R2 Class B without edge caching |
-| BUDGET009 | HIGH | R2 Infrequent Access with reads |
-| PRIV001-003 | MEDIUM-CRITICAL | Privacy enforcement (auth headers, PII, financial) |
-| ZT001-008 | HIGH-CRITICAL | Zero Trust gaps |
-| ZT009 | CRITICAL | /jobs/* route without service token auth (NEW v1.5.0) |
-| ZT010 | HIGH | Admin uses password-only (no OTP/MFA) (NEW v1.5.0) |
-| ZT011 | CRITICAL | Service token credentials hardcoded (NEW v1.5.0) |
-| ZT012 | MEDIUM | Admin session > 4h (NEW v1.5.0) |
-| LOOP001 | MEDIUM | Missing cpu_ms limit |
-| LOOP002 | CRITICAL | D1 query in loop (N+1) |
-| LOOP003 | HIGH | R2 write in loop |
-| LOOP004 | HIGH | setInterval in DO without termination |
-| LOOP005 | CRITICAL | Worker self-fetch / recursion |
-| LOOP006 | HIGH | Queue without DLQ (retry loop) |
-| LOOP007 | CRITICAL | Unbounded while(true) loop |
-| LOOP008 | MEDIUM | High queue retry count |
-| QUERY001 | HIGH | SELECT * without LIMIT (NEW v1.5.0) |
-| QUERY005 | HIGH | Drizzle .all() without .limit() (NEW v1.5.0) |
-| R2002 | MEDIUM | R2.get() without cache wrapper (NEW v1.5.0) |
-| OBS001 | LOW | Observability not enabled (NEW v1.5.0) |
-| OBS002 | MEDIUM | Logs enabled but no export destination (NEW v1.5.0) |
-| OBS003 | INFO | High sampling rate with high-volume worker (NEW v1.5.0) |
+**Blocking**: Only CRITICAL blocks deployment. All others are warnings.
+
+| ID | Severity | Detection | Check |
+|----|----------|-----------|-------|
+| SEC001 | CRITICAL | HEURISTIC | Plaintext secrets in config |
+| RES001 | HIGH | CONFIG | Queue without DLQ |
+| RES002 | MEDIUM | CONFIG | Missing max_concurrency |
+| COST001 | MEDIUM | CONFIG | max_retries > 2 |
+| PERF001 | LOW | CONFIG | smart_placement disabled |
+| PERF004 | LOW | CONFIG | observability.logs disabled |
+| PERF005 | CRITICAL/HIGH | HEURISTIC | Bundle size exceeds tier limits |
+| PERF006 | HIGH | STATIC | Incompatible native packages |
+| ARCH001 | MEDIUM | CONFIG | Deprecated [site] or pages_build_output_dir |
+| BUDGET007 | CRITICAL | STATIC | D1 row read explosion - unindexed queries |
+| BUDGET008 | MEDIUM | STATIC | R2 Class B without edge caching |
+| BUDGET009 | INFO | HEURISTIC | R2 bucket name suggests IA storage |
+| LOOP001 | MEDIUM | CONFIG | Missing cpu_ms limit |
+| LOOP002 | CRITICAL | STATIC | D1 query in loop (N+1) |
+| LOOP003 | HIGH | STATIC | R2 write in loop |
+| LOOP004 | MEDIUM | STATIC | setInterval in DO without termination |
+| LOOP005 | CRITICAL/HIGH | STATIC/HEURISTIC | Worker self-fetch / recursion |
+| LOOP007 | CRITICAL | STATIC | Unbounded while(true) loop |
+| QUERY001 | HIGH | STATIC | SELECT * without LIMIT |
+| QUERY005 | HIGH | STATIC | Drizzle .all() without .limit() |
+| R2002 | MEDIUM | STATIC | R2.get() without cache wrapper |
+| OBS002 | MEDIUM | HEURISTIC | Logs enabled but no export destination |
+| OBS003 | INFO | CONFIG | High sampling rate with high-volume worker |
+| AI001 | HIGH | STATIC | Expensive AI model usage (NEW v1.6.0) |
+| AI002 | MEDIUM | HEURISTIC | AI inference without cache wrapper (NEW v1.6.0) |
 
 ## Testing Changes
 
@@ -219,6 +224,7 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 
 ## Version History
 
+- v1.6.0 - **Session Hooks + AI Detection**: SessionStart hook for CF project detection with fingerprint caching, PostToolUse hook for deployment verification with next-step suggestions, AI001/AI002 rules for Workers AI cost detection (expensive models, missing cache), hooks.json restructured to support SessionStart/PreToolUse/PostToolUse (13 skills, 3 agents, 5 commands, 3 hooks)
 - v1.5.1 - **Best Practices Audit**: Progressive disclosure refactoring (architect, implement, zero-trust skills split into references/), agent `<example>` blocks added for improved triggering, skill frontmatter standardisation, writing style converted to imperative form (~2,300 lines reduced through modularisation)
 - v1.5.0 - **Query Optimization + External Logging + Privacy**: D1 query-optimizer skill (QUERY001-005), workflow-architect skill for Cloudflare Workflows, cf-logs command for external logging (Axiom/Better Stack), Python Workers decision tree, Pages vs Workers migration triggers, Zero Trust extensions (Tunnel config, Access Policy Generator, ZT009-012), R2 Class B cost protection (R2002), Privacy cost traps (TRAP-PRIVACY-001-003), 7 new cost traps, 14 new validation rules (13 skills, 3 agents, 5 commands, 1 hook)
 - v1.4.1 - **Hook Suppression**: `@pre-deploy-ok` inline comments, `.pre-deploy-ignore` project file, `SKIP_PREDEPLOY_CHECK` env var bypass, BUDGET009 suppression support, improved LOOP005 depth detection, TOML parser fixes

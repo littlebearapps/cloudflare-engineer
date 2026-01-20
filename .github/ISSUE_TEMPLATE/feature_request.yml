@@ -1,0 +1,137 @@
+name: ✨ Feature Request
+description: Suggest a new feature or improvement for the plugin
+title: "[FEATURE] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please help us understand your use case.
+
+        Before submitting, check if this has already been requested in [existing issues](https://github.com/littlebearapps/cloudflare-engineer/issues?q=is%3Aissue+label%3Aenhancement).
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight Checklist
+      options:
+        - label: I have searched [existing requests](https://github.com/littlebearapps/cloudflare-engineer/issues?q=is%3Aissue+label%3Aenhancement) and this hasn't been requested
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem are you trying to solve? Focus on the problem, not the solution.
+      placeholder: |
+        When working with Cloudflare Hyperdrive, there's no guidance on connection pooling patterns...
+
+        The pre-deploy hook doesn't detect X pattern which can cause billing issues...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How would you like this to work?
+      placeholder: |
+        Add a new skill for Hyperdrive that includes...
+
+        Add validation rule HYPER001 to detect...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component_type
+    attributes:
+      label: Component Type
+      description: What type of addition is this?
+      options:
+        - New skill
+        - New agent
+        - New command (/cf-*)
+        - New validation rule (hook)
+        - New architecture pattern
+        - Enhancement to existing component
+        - Documentation improvement
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: cloudflare_service
+    attributes:
+      label: Cloudflare Services
+      description: Which Cloudflare services does this relate to?
+      multiple: true
+      options:
+        - Workers
+        - D1
+        - R2
+        - KV
+        - Queues
+        - Durable Objects
+        - AI Gateway / Workers AI
+        - Vectorize
+        - Workflows
+        - Hyperdrive
+        - Access / Zero Trust
+        - Custom Hostnames
+        - Stream / Images
+        - Containers
+        - Other / New service
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or workarounds you've tried?
+      placeholder: |
+        I've tried using the implement skill but it doesn't cover...
+
+        Currently I work around this by manually...
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this to your workflow?
+      options:
+        - Critical - Blocking my work
+        - High - Significant impact on productivity
+        - Medium - Would be very helpful
+        - Low - Nice to have
+    validations:
+      required: true
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use Case Example
+      description: Provide a concrete, real-world example of when you'd use this
+      placeholder: |
+        1. I'm building a multi-tenant SaaS with custom domains
+        2. I need to validate SSL certificate provisioning
+        3. With this feature, I could...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Would you like to contribute?
+      options:
+        - label: I'd like to submit a PR for this feature
+          required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Screenshots, mockups, links to similar features in other tools, etc.
+    validations:
+      required: false

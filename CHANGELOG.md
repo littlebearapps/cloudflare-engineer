@@ -5,6 +5,31 @@ All notable changes to the Cloudflare Engineer plugin will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-01-20
+
+### Added
+- **Session-Aware Hooks** - Complete hook lifecycle for Cloudflare projects:
+  - **SessionStart Hook** (`hooks/session-start.py`) - Automatic CF project detection with binding discovery (D1, R2, KV, Queues, DO, AI, Vectorize, Workflows)
+  - **PostToolUse Hook** (`hooks/post-deploy-verify.py`) - Deployment verification with success/failure parsing and next-step suggestions
+  - Fingerprint caching prevents repeated announcements on session resume
+- **AI Cost Detection Rules** in pre-deploy hook:
+  - **AI001** (HIGH) - Expensive model usage (llama-3.1-405b, llama-3.3-70b, deepseek-r1) without cost awareness
+  - **AI002** (MEDIUM) - AI binding without cache wrapper pattern
+- **New Cost Traps**:
+  - TRAP-AI-001: Large model inference without caching
+- **GitHub Issues & Discussions Integration**:
+  - Upgraded issue templates to YAML forms (bug_report.yml, feature_request.yml) with structured fields
+  - Added GitHub Discussions as community channel for questions and ideas
+  - Issue template config with contact links (docs, changelog, contributing, security)
+  - README badges for Issues and Discussions
+  - Support & Community section in README
+
+### Changed
+- Hook count increased from 1 to 3 (SessionStart, PreToolUse, PostToolUse)
+- Pre-deploy hook now includes `check_ai_patterns()` for Workers AI cost detection
+- Plugin keywords updated with `workers-ai`, `ai-cost`, `session-hooks`
+- CLAUDE.md updated with v1.6.0 service coverage and rule IDs
+
 ## [1.5.1] - 2026-01-19
 
 ### Changed

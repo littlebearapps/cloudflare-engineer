@@ -1,383 +1,166 @@
 # Cloudflare Engineer Plugin
 
-[![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
+[![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-v2.0.12+-purple.svg)](https://claude.com/claude-code)
+[![GitHub Issues](https://img.shields.io/github/issues/littlebearapps/cloudflare-engineer)](https://github.com/littlebearapps/cloudflare-engineer/issues)
+[![GitHub Discussions](https://img.shields.io/github/discussions/littlebearapps/cloudflare-engineer)](https://github.com/littlebearapps/cloudflare-engineer/discussions)
 
-A Claude Code plugin that provides **Platform Architect** capabilities for designing, implementing, optimizing, and securing Cloudflare Workers applications. Features **D1 Query Optimization**, **Cloudflare Workflows**, **External Logging**, **Python Workers**, **Zero Trust Tooling**, and **R2 Cost Protection**.
+> **The Platform Architect that protects your wallet.**
+> Design, implement, and secure Cloudflare Workers without the billing anxiety.
+
+## Why This Plugin?
+
+Serverless is powerful, but a single infinite loop or unindexed query can cost thousands. **Cloudflare Engineer** acts as your proactive pair programmer, enforcing architectural patterns that scale without bankrupting you.
+
+It doesn't just write code—it **audits** it against a database of known Cloudflare billing traps.
+
+| 🛡️ **Sleep Soundly** | ⚡ **Ship Faster** | 🏗️ **Scale Smart** |
+| :--- | :--- | :--- |
+| Real-time cost guardrails catch row-read explosions and recursion loops *before* you deploy. | 13 auto-skills handle the boilerplate for Hono, D1, Queues, and Workflows instantly. | Pattern architect suggests the right tool (Workers vs Containers vs Workflows) for the job. |
 
 ## Quick Install
 
 ```bash
-# Step 1: Add the marketplace
+# 1. Add the marketplace
 /plugin marketplace add littlebearapps/cloudflare-engineer
 
-# Step 2: Install the plugin
+# 2. Install the plugin
 /plugin install cloudflare-engineer@littlebearapps-cloudflare-engineer
 ```
 
-To update to the latest version:
+To update: `/plugin update cloudflare-engineer@littlebearapps-cloudflare-engineer`
 
-```bash
-/plugin update cloudflare-engineer@littlebearapps-cloudflare-engineer
-```
-
-> [!TIP]
-> This plugin works fully without any additional setup. For enhanced capabilities like live validation and real-time cost analysis, configure the optional [Cloudflare MCP servers](#mcp-tool-integration).
-
-## Features at a Glance
-
-| Category | What You Get |
-|----------|--------------|
-| **13 Skills** | D1 Query Optimization, Cloudflare Workflows, Cost optimization, security auditing, architecture design, Loop Protection, Zero Trust, Custom Hostnames, Media/Streaming, and more |
-| **5 Commands** | `/cf-costs`, `/cf-audit` (with Resource Discovery), `/cf-design`, `/cf-pattern`, `/cf-logs` |
-| **3 Agents** | Deep analysis with MCP tool integration |
-| **1 Hook** | Pre-deploy validation with Performance Budgeter, Loop Detection, and Query Checks |
-
-## What's New in v1.5.0
-
-### D1 Query Optimization
-
-New `query-optimizer` skill protects against the #1 D1 billing trap—row read explosion from unindexed queries:
-
-| Feature | Problem Solved | Guardian Rule |
-|---------|---------------|---------------|
-| **SELECT * Detection** | Unbounded queries reading entire tables | QUERY001 |
-| **Drizzle .all() Checks** | ORM-hidden unbounded queries | QUERY005 |
-| **N+1 Query Detection** | Database calls inside loops | QUERY002 |
-| **Pagination Guidance** | List endpoints without limits | QUERY004 |
-| **Caching Decision Tree** | When to use KV vs Cache API | Skill guidance |
-
-### Cloudflare Workflows
-
-New `workflow-architect` skill guides you toward Workflows for multi-step processes instead of complex Queue patterns:
-
-- **Queues vs Workflows Decision Tree**: When each is appropriate
-- **WorkflowEntrypoint Boilerplate**: TypeScript templates with `step.do()`, `step.sleep()`
-- **Step Patterns**: Sequential, parallel, conditional branching, fan-out/fan-in
-- **Anti-Patterns**: What to avoid in workflow design
-
-### External Logging (`/cf-logs`)
-
-New command for configuring observability export to external vendors:
-
-| Vendor | Free Tier | Best For |
-|--------|-----------|----------|
-| **Axiom** | 500GB/month | High-volume, long retention |
-| **Better Stack** | 1GB/month | Real-time dashboards |
-| **HTTP Endpoint** | N/A | Custom/self-hosted |
-
-Includes **Privacy Filters** with auto-recommended redaction patterns for Authorization headers, API keys, PII, and financial data.
-
-### Python Workers Support
-
-Extended `architect` skill with Python Workers decision tree:
-
-- **Use Python Workers**: For familiar syntax, simple data processing
-- **Use JS Workers**: For best cold start, npm ecosystem
-- **Use Containers**: For numpy, pandas, opencv, or native libs
-
-### Zero Trust Tooling Expansion
-
-Extended `zero-trust` skill with new capabilities:
-
-| Feature | Purpose |
-|---------|---------|
-| **Tunnel Configuration** | Quick start YAML templates for cloudflared |
-| **Access Policy Generator** | Email OTP, Service Token, combined patterns |
-| **Admin Protection Checklist** | Common security gaps for admin panels |
-| **ZT009-012 Rules** | New validation for service tokens, MFA, sessions |
-
-### R2 Class B Cost Protection
-
-Enhanced `cost-analyzer` agent with R2-specific checks:
-
-| Check | Detection |
-|-------|-----------|
-| **R2002** | `R2.get()` without `caches.default` wrapper |
-| **TRAP-R2-005** | Public bucket without CDN configuration |
-| **TRAP-R2-006** | Uncached reads on hot paths |
+> **Note**: Works fully without setup. For live validation against production metrics, configure the optional [Cloudflare MCP servers](#mcp-tool-integration).
 
 ---
 
-## What's New in v1.4.0
+## Billing Protection
 
-### Cost Awareness Upgrade
+We detect the specific patterns that cause billing spikes.
 
-Comprehensive cost protection for the primary billing dangers facing solo developers:
+| Protection | What It Catches | Rule |
+|------------|-----------------|------|
+| **D1 Row Read Shield** | `SELECT *` without `LIMIT`, unindexed queries causing millions of reads | QUERY001, BUDGET007 |
+| **R2 Cost Shield** | Class B operation abuse, public buckets without CDN caching | BUDGET008, R2002 |
+| **Loop Breaker** | Worker self-recursion, infinite retry loops, `setInterval` in DOs | LOOP001-008 |
+| **AI Cost Awareness** | Expensive models (Llama 405b, DeepSeek-R1) for simple tasks | AI001, AI002 |
+| **Queue Safety** | Missing DLQs, high retry counts, no max_concurrency | RES001, COST001 |
 
-| Feature | Problem Solved | Guardian Rule |
-|---------|---------------|---------------|
-| **D1 Row Read Protection** | Unindexed queries causing millions of reads | BUDGET007 |
-| **R2 Class B Caching** | Public bucket reads without CDN cache | BUDGET008 |
-| **R2 IA Trap Warning** | $9 minimum charge on IA bucket reads | BUDGET009 |
-| **KV-Cache-First Pattern** | Cache D1 reads to avoid row read explosion | New pattern |
-| **R2-CDN-Cache Pattern** | Edge cache for R2 public assets | New pattern |
+See the full [Cost-Sensitive Resources Watchlist](COST_SENSITIVE_RESOURCES.md) for all billing traps.
 
-### Workers + Assets Architecture
+## Architecture Skills
 
-Cloudflare has merged Pages into Workers. The plugin now:
+Stop guessing which service to use. The plugin provides decision trees for:
 
-- Defaults to unified `[assets]` block for fullstack apps
-- Flags deprecated `[site]` configuration (ARCH001)
-- Scaffolds Workers + Assets for React/Vue/Svelte SPAs
+| Skill | When It Activates |
+|-------|-------------------|
+| `architect` | "Design a queue-based pipeline" → Edge-Native Constraints + Billing Safety |
+| `workflow-architect` | "Should I use Queues or Workflows?" → Durable execution patterns |
+| `query-optimizer` | "Optimize my D1 queries" → N+1 detection, caching decisions |
+| `loop-breaker` | "Prevent infinite loops" → Recursion guards, idempotency |
+| `guardian` | "Is my worker secure?" → Security + Budget + Privacy audit |
+| `zero-trust` | "Protect my staging environment" → Access policies, Tunnel config |
+| `implement` | "Scaffold a Hono API with D1" → Code templates + Queue Safety |
 
-```jsonc
-// Modern configuration (recommended)
-{
-  "assets": {
-    "directory": "./dist",
-    "html_handling": "auto-trailing-slash",
-    "not_found_handling": "single-page-application"
-  }
-}
-```
-
-### Workload Router: Isolates vs Containers
-
-With Cloudflare Containers launching in 2025, the plugin now includes a decision tree:
-
-- **Use Workers (Isolates)**: Standard APIs, D1/KV/R2, AI inference
-- **Use Containers**: FFmpeg, Puppeteer, Python with native libs
-- Hybrid architecture patterns for complex workloads
-
-### Observability Export
-
-Native Cloudflare log retention is short (3-7 days). New scaffolding for:
-
-- **Axiom** (recommended free tier: 500GB/month)
-- **Better Stack / Logtail**
-- **OpenTelemetry native export**
+All 13 skills activate automatically based on your questions.
 
 ---
 
-## Loop Protection
+## Pre-Deploy Validation
 
-Infinite loops in serverless aren't just frozen tabs—they're **billing multipliers**. This plugin provides comprehensive protection:
+Before `wrangler deploy`, our hook validates your config and source code against 30+ rules.
 
-| Protection | What It Does |
-|------------|--------------|
-| **Recursion Guards** | Detects Worker self-fetch patterns, scaffolds X-Recursion-Depth middleware |
-| **CPU Time Caps** | Enforces `limits.cpu_ms` to kill runaway loops before they bill |
-| **Queue Safety** | Idempotency patterns + DLQ enforcement to break retry storms |
-| **DO Hibernation** | Alarm-based timers instead of `setInterval` to stop duration billing |
-| **N+1 Detection** | Flags D1 queries and R2 writes inside loops |
-| **Cost Simulation** | Estimates potential cost impact of detected loop patterns |
+### Severity Levels
 
-See the `loop-breaker` skill for complete middleware templates and patterns.
+| Severity | Blocking? | Example Detection |
+|----------|-----------|-------------------|
+| 🔴 CRITICAL | **Yes** | `while(true)` without break, D1 query inside `map()` |
+| 🟠 HIGH | No | Plaintext secrets, R2 writes in loops |
+| 🟡 MEDIUM | No | Missing DLQ, deprecated `[site]` config |
+| 🔵 LOW/INFO | No | Smart placement disabled, observability not configured |
 
-## Vibecoder Proactive Safeguards
+### Key Rules
 
-This plugin **proactively warns** you about cost and privacy impacts **before you ask**:
+| Rule | Severity | Detection |
+|------|----------|-----------|
+| SEC001 | 🔴 CRITICAL | Plaintext secrets in config |
+| LOOP002 | 🔴 CRITICAL | D1 query in loop (N+1 trap) |
+| LOOP005 | 🔴 CRITICAL | Worker self-fetch recursion |
+| LOOP007 | 🔴 CRITICAL | Unbounded `while(true)` loop |
+| BUDGET007 | 🔴 CRITICAL | D1 row read explosion |
+| RES001 | 🟠 HIGH | Queue without dead letter queue |
+| BUDGET008 | 🟡 MEDIUM | R2 Class B without edge caching |
+| AI001 | 🟠 HIGH | Expensive AI model without cost awareness |
 
-| Trigger | Warning |
-|---------|---------|
-| Durable Objects usage | "DO charges ~$0.15/GB-month storage. Consider KV for simple key-value." |
-| R2 Class A ops >1M/mo | "R2 writes cost $4.50/M. Buffer writes or use presigned URLs." |
-| D1 Writes >10M/mo | "D1 writes cost $1/M. Batch to 1,000 rows." |
-| Workers AI >8B models | "Large models cost $0.68/M tokens. Use 8B or smaller for bulk." |
-| PII in logs | "Detected potential PII logging. Use structured logging with redaction." |
-| User data in KV keys | "KV keys with user IDs may leak via dashboard. Hash or encrypt." |
+### Suppressing False Positives
 
-## Supported Cloudflare Services
-
-- Workers (standard & Durable Objects)
-- Containers (Beta)
-- D1 (SQLite database)
-- R2 (object storage)
-- KV (key-value store)
-- Queues (with DLQ support)
-- Vectorize (vector database)
-- AI Gateway (LLM routing)
-- Workflows (durable execution)
-- Hyperdrive (connection pooling)
-- Analytics Engine
-- Access (Zero Trust)
-- Custom Hostnames (SSL for SaaS)
-- Stream (video delivery)
-- Images (transformations)
-
-## Commands
-
-| Command | Purpose |
-|---------|---------|
-| `/cf-costs [--validate]` | Cost report with monthly projections |
-| `/cf-audit [--validate] [--category=<cat>]` | Security/performance/cost audit with Resource Discovery |
-| `/cf-design` | Interactive architecture design wizard |
-| `/cf-pattern <name> [--analyze-only]` | Apply architecture pattern |
-| `/cf-logs [--vendor=axiom\|betterstack\|http] [--check] [--analyze]` | External logging configuration (NEW v1.5.0) |
-
-## Skills (Auto-Invoked)
-
-Skills activate automatically based on your questions:
-
-```
-"How much will this worker cost?"           -> optimize-costs
-"Is my worker secure?"                      -> guardian (with Budget & Privacy & Loop Audit)
-"Design a queue-based pipeline"             -> architect (with Billing Safety Limits)
-"Scaffold a Hono API with D1"               -> implement (with Queue Safety)
-"How do I scale to 1M requests/day?"        -> scale
-"Prevent infinite loops in my worker"       -> loop-breaker
-"Add recursion protection to webhooks"      -> loop-breaker
-"Is my staging environment protected?"      -> zero-trust
-"How do I add custom domains for SaaS?"     -> custom-hostnames
-"How do I serve videos with signed URLs?"   -> media-streaming
-"Optimize my D1 queries"                    -> query-optimizer (NEW v1.5.0)
-"Should I use Queues or Workflows?"         -> workflow-architect (NEW v1.5.0)
-"Set up a Cloudflare Tunnel"                -> zero-trust (Tunnel config)
-```
-
-### All 13 Skills
-
-| Skill | Purpose |
-|-------|---------|
-| `architect` | Architecture design with Edge-Native Constraints + Billing Safety + Pages Migration |
-| `guardian` | Security + Budget + Privacy + Loop Auditing |
-| `implement` | Code scaffolding (Hono, D1, Drizzle) + Queue Safety |
-| `loop-breaker` | Recursion guards, idempotency, DO hibernation |
-| `optimize-costs` | Cost analysis and optimization |
-| `scale` | Scaling strategies and patterns |
-| `probes` | MCP audit queries |
-| `patterns` | Architecture pattern catalog (5 patterns) |
-| `zero-trust` | Access policy auditing + Tunnel config + Admin Protection |
-| `custom-hostnames` | SSL for SaaS management |
-| `media-streaming` | Stream and Images patterns |
-| `query-optimizer` | D1 query optimization, N+1 detection, caching decisions (NEW v1.5.0) |
-| `workflow-architect` | Cloudflare Workflows patterns, Queues vs Workflows (NEW v1.5.0) |
-
-## Pre-Deploy Validation Hook
-
-Automatically validates `wrangler.toml` before deployment:
-
-| Check | Severity | Description |
-|-------|----------|-------------|
-| SEC001 | CRITICAL | Plaintext secrets in config |
-| RES001 | HIGH | Queues without dead letter queues |
-| RES002 | MEDIUM | Missing max_concurrency limit |
-| COST001 | MEDIUM | High retry counts ($0.40/M per retry) |
-| PERF001 | LOW | Smart placement disabled |
-| PERF004 | LOW | Observability not configured |
-| PERF005 | CRITICAL/HIGH | Bundle size exceeds tier limits |
-| PERF006 | HIGH | Incompatible native packages |
-| ARCH001 | MEDIUM | Deprecated `[site]` configuration |
-| BUDGET007 | CRITICAL | D1 row read explosion (unindexed queries) |
-| BUDGET008 | MEDIUM | R2 Class B without edge caching |
-| BUDGET009 | HIGH | R2 Infrequent Access with reads |
-| LOOP001 | MEDIUM | Missing `cpu_ms` limit |
-| LOOP002 | CRITICAL | D1 query in loop - N+1 |
-| LOOP003 | HIGH | R2 write in loop |
-| LOOP004 | MEDIUM | `setInterval` in DO |
-| LOOP005 | CRITICAL | Worker self-fetch recursion |
-| LOOP006 | HIGH | Queue without DLQ |
-| LOOP007 | CRITICAL | Unbounded `while(true)` |
-| LOOP008 | MEDIUM | High queue retry count |
-| QUERY001 | HIGH | SELECT * without LIMIT (NEW v1.5.0) |
-| QUERY005 | HIGH | Drizzle .all() without .limit() (NEW v1.5.0) |
-| R2002 | MEDIUM | R2.get() without cache wrapper (NEW v1.5.0) |
-| OBS001 | LOW | Observability not enabled (NEW v1.5.0) |
-| OBS002 | MEDIUM | Logs enabled but no export destination (NEW v1.5.0) |
-| OBS003 | INFO | High sampling rate with high-volume worker (NEW v1.5.0) |
-
-**CRITICAL issues block deployment.** This includes loop safety and cost issues that could cause billing explosions.
-
-### Suppressing Warnings
-
-For known-safe patterns, use inline comments to suppress specific rules:
+**Inline comments** for known-safe patterns:
 
 ```typescript
 // @pre-deploy-ok LOOP005
 async function traverse(node: Node, depth = 0) {
   if (depth > 10) return;  // Has depth limit - safe
-  for (const child of node.children) {
-    await traverse(child, depth + 1);
-  }
+  await traverse(child, depth + 1);
 }
 
 while (true) { // @pre-deploy-ok LOOP007
-  // Controlled loop with break condition
-  if (shouldStop) break;
+  if (shouldStop) break;  // Controlled loop
 }
 ```
 
-Supported formats:
-- `// @pre-deploy-ok LOOP005` - Suppress specific rule
-- `// @pre-deploy-ok LOOP005 LOOP002` - Multiple rules
-- `// @pre-deploy-ok` - Suppress all rules on that line
-
-### Project-Level Suppression
-
-Create a `.pre-deploy-ignore` file in your project root for config-level rules:
+**Project-level `.pre-deploy-ignore`** file:
 
 ```bash
-# .pre-deploy-ignore
-RES001:my-queue     # Suppress DLQ warning only for my-queue
-COST001             # Suppress high retry warnings globally
-RES002              # Suppress max_concurrency warnings globally
-LOOP001             # We need high cpu_ms for this worker
+RES001:my-queue     # Suppress for specific queue
+LOOP001             # Allow high cpu_ms for this worker
 ```
 
-Format: `RULE_ID` or `RULE_ID:context` (context = queue name, bucket name, etc.)
-
-### Emergency Bypass
-
-To bypass validation entirely (emergency deploys):
+**Emergency bypass** (session-only):
 
 ```bash
 SKIP_PREDEPLOY_CHECK=1 npx wrangler deploy
 ```
 
-### Performance Budgeter
+---
 
-The hook estimates bundle size and warns about tier limits:
-- **Free tier**: 1MB compressed - `[HIGH]` if exceeded
-- **Standard tier**: 10MB compressed - `[CRITICAL]` if exceeded
-- Detects heavy dependencies: `moment`, `lodash`, `aws-sdk`, `sharp`
+## Commands
 
-### Loop Detection & Cost Simulation
+| Command | Description |
+|---------|-------------|
+| `/cf-costs [--validate]` | Cost report with monthly projections |
+| `/cf-audit [--validate]` | Full security, performance, and cost audit |
+| `/cf-design` | Interactive architecture design wizard |
+| `/cf-pattern <name>` | Apply patterns: `circuit-breaker`, `kv-cache-first`, `d1-batching` |
+| `/cf-logs` | Configure external logging (Axiom, Better Stack) with privacy filters |
 
-The hook scans source code for loop-sensitive patterns:
-- D1 queries inside `for`/`while`/`forEach` blocks
-- R2 `.put()` calls inside loops
-- `setInterval` in Durable Objects without termination
-- `fetch(request.url)` self-recursion patterns
-- Unbounded `while(true)` or `for(;;)` loops
+## Pattern Catalog
 
-Detected patterns include **cost simulation** estimates.
-
-## Live Validation Mode
-
-Commands support **live validation** against Cloudflare MCP tools:
-
-```bash
-/cf-costs --validate    # Compare estimates with live observability data
-/cf-audit --validate    # Verify findings against production metrics
-```
-
-All findings are tagged with their data source:
-
-| Tag | Meaning |
-|-----|---------|
-| `[STATIC]` | Inferred from code/config analysis |
-| `[LIVE-VALIDATED]` | Confirmed by observability data |
-| `[LIVE-REFUTED]` | Code smell not observed in production |
-| `[INCOMPLETE]` | MCP tools unavailable for verification |
-
-## Architecture Pattern Catalog
-
-Apply battle-tested patterns with code examples:
+Apply battle-tested patterns with scaffolding:
 
 | Pattern | Problem | Solution |
 |---------|---------|----------|
 | `service-bindings` | Monolithic Worker hitting subrequest limits | Decompose with RPC |
-| `d1-batching` | High D1 write costs | Batch INSERT operations |
+| `d1-batching` | High D1 write costs from per-row inserts | Batch INSERT operations |
 | `circuit-breaker` | External API cascading failures | Fail-fast with fallback |
 | `kv-cache-first` | D1 row read explosion | Cache reads in KV |
 | `r2-cdn-cache` | R2 Class B operation costs | Edge cache public assets |
 
 ```bash
-/cf-pattern service-bindings
-/cf-pattern kv-cache-first --analyze-only
+/cf-pattern kv-cache-first
+/cf-pattern circuit-breaker --analyze-only
 ```
+
+---
+
+## Supported Services
+
+| Category | Services |
+|----------|----------|
+| **Compute** | Workers, Durable Objects, Containers (Beta) |
+| **Storage** | R2, D1 (SQLite), KV, Vectorize |
+| **Flow** | Queues, Workflows, Stream |
+| **Security** | Access (Zero Trust), AI Gateway, Custom Hostnames |
 
 ## MCP Tool Integration
 
@@ -389,120 +172,58 @@ For `--validate` mode, configure these Cloudflare MCP servers:
 | `cloudflare-ai-gateway` | AI costs, cache hit rates |
 | `cloudflare-bindings` | D1 queries, resource inventory |
 
-### What Works Without MCP
+**Without MCP**: Full static analysis works perfectly. Commands tag findings as `[STATIC]`.
 
-| Feature | Without MCP | With MCP |
-|---------|-------------|----------|
-| `/cf-costs` | Static estimates from config | + Live usage validation |
-| `/cf-audit` | Config & code analysis | + Production metrics |
-| `/cf-design` | Full functionality | Same |
-| `/cf-pattern` | Full functionality | Same |
-| `/cf-logs` | Full functionality | + Log volume analysis |
-| Pre-deploy hook | Full functionality | Same |
-| All 13 skills | Full functionality | Same |
-| All 3 agents | Static analysis | + Real-time data |
+**With MCP**: Live validation confirms findings against production. Tags: `[LIVE-VALIDATED]` or `[LIVE-REFUTED]`.
 
-**Graceful Degradation**: Commands continue with static analysis if MCP tools are unavailable, tagging affected findings as `[INCOMPLETE]`.
+---
 
-## Usage Examples
+## What's New in v1.6.0
 
-```bash
-# Cost analysis
-/cf-costs                              # Static cost estimate
-/cf-costs --validate                   # With live data validation
+### Session-Aware Hooks
 
-# Security audit
-/cf-audit                              # Full audit
-/cf-audit --validate --category=security
+| Hook | When | What It Does |
+|------|------|--------------|
+| **SessionStart** | Session begins | Detects CF projects, announces bindings (D1, R2, KV, Queues, DO, AI) |
+| **PreToolUse** | Before `wrangler deploy` | Validates config and source code (30+ rules) |
+| **PostToolUse** | After `wrangler deploy` | Parses deployment output, suggests next steps |
 
-# Architecture design
-/cf-design                             # Interactive wizard
+### AI Cost Detection
 
-# Apply patterns
-/cf-pattern circuit-breaker            # Apply pattern
-/cf-pattern service-bindings --analyze-only  # Analysis only
+| Rule | Severity | Detection |
+|------|----------|-----------|
+| AI001 | 🟠 HIGH | Expensive model usage (llama-3.1-405b, deepseek-r1) without cost awareness |
+| AI002 | 🟡 MEDIUM | AI binding without cache wrapper pattern |
 
-# External logging (NEW v1.5.0)
-/cf-logs                               # Interactive vendor selection wizard
-/cf-logs --vendor=axiom                # Direct Axiom configuration
-/cf-logs --check                       # Validate existing observability config
-/cf-logs --analyze                     # Log volume analysis for sampling recs
-```
+### GitHub Integration
+
+- YAML issue templates with structured fields
+- GitHub Discussions for community Q&A
+- 10 new labels for Cloudflare services and components
+
+---
+
+## Support & Community
+
+| Channel | Purpose |
+|---------|---------|
+| [GitHub Issues](https://github.com/littlebearapps/cloudflare-engineer/issues) | Bug reports and feature requests |
+| [GitHub Discussions](https://github.com/littlebearapps/cloudflare-engineer/discussions) | Questions, ideas, and community chat |
+| [Changelog](CHANGELOG.md) | Version history and what's new |
 
 ## Requirements
 
 - Claude Code v2.0.12+
 - Python 3.8+ (for pre-deploy hook)
 - Cloudflare account with Workers enabled
-- (Optional) Cloudflare MCP servers for `--validate` mode
-
-## Safety & Costs
-
-This plugin includes built-in guardrails to prevent unexpected Cloudflare bills. See the **[Cost-Sensitive Resources Watchlist](COST_SENSITIVE_RESOURCES.md)** for detailed documentation of pricing traps and how to avoid them.
-
-### Cost Trap Quick Reference
-
-| Service | Top Cost Trap | Guardian Rule | Detection |
-|---------|---------------|---------------|-----------|
-| D1 | Row read explosion | BUDGET007 | Unindexed queries |
-| D1 | Per-row inserts instead of batch | BUDGET003 | `for.*\.run\(` pattern |
-| R2 | Class B without caching | BUDGET008 | Public bucket reads |
-| R2 | IA minimum billing | BUDGET009 | Reads on IA storage |
-| R2 | Frequent small writes | BUDGET002 | `.put()` in loops |
-| Durable Objects | Overuse for simple KV | BUDGET001 | DO without coordination need |
-| KV | Write-heavy patterns | BUDGET005 | High `.put()` frequency |
-| Queues | High retry counts | COST001 | `max_retries > 2` |
-| Workers AI | Large models for simple tasks | BUDGET004 | Model name contains `70b` |
-
-### Loop Safety Quick Reference
-
-| Loop Type | Trap ID | Guardian Rule | Detection |
-|-----------|---------|---------------|-----------|
-| Worker self-fetch | TRAP-LOOP-001 | LOOP005 | `fetch(request.url)` |
-| Queue retry storm | TRAP-LOOP-002 | LOOP006, LOOP008 | No DLQ, high retries |
-| DO setInterval | TRAP-LOOP-003 | LOOP004 | `setInterval` in DO |
-| N+1 queries | TRAP-LOOP-004 | LOOP002 | SQL in loop |
-| R2 write flood | TRAP-LOOP-005 | LOOP003 | `.put()` in loop |
-
-### Budget Whisperer
-
-When Claude suggests code changes involving D1, R2, or Durable Objects, the guardian skill automatically:
-1. Searches for cost-optimized patterns (`.batch()`, `CREATE INDEX`, buffering)
-2. Warns if expensive patterns are detected
-3. Cites specific traps from the Cost Watchlist
-
-## Directory Structure
-
-```
-cloudflare-engineer/
-├── .claude-plugin/plugin.json    # Plugin manifest
-├── skills/                       # 13 auto-invoked skills
-│   ├── architect/                # Architecture + Edge-Native + Billing Safety + Pages Migration
-│   ├── guardian/                 # Security + Budget + Privacy + Loop Auditing
-│   ├── implement/                # Code scaffolding + Queue Safety
-│   ├── loop-breaker/             # Recursion guards + Loop protection
-│   ├── optimize-costs/           # Cost analysis
-│   ├── scale/                    # Scaling patterns
-│   ├── probes/                   # MCP queries
-│   ├── patterns/                 # Pattern catalog (5 patterns)
-│   ├── zero-trust/               # Access policies + Tunnel config + Admin Protection
-│   ├── custom-hostnames/         # SSL for SaaS
-│   ├── media-streaming/          # Stream & Images
-│   ├── query-optimizer/          # D1 query optimization (NEW v1.5.0)
-│   └── workflow-architect/       # Cloudflare Workflows (NEW v1.5.0)
-├── agents/                       # 3 deep-analysis agents
-├── commands/                     # 5 slash commands (including /cf-logs)
-├── hooks/                        # Pre-deploy validation + Loop Detection + Query Checks
-├── COST_SENSITIVE_RESOURCES.md   # Cost trap catalog
-├── LICENSE                       # MIT
-├── CONTRIBUTING.md               # Contribution guide
-├── SECURITY.md                   # Security policy
-└── CHANGELOG.md                  # Version history
-```
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+We believe in the power of open source. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
+
+1. Check the [Issue Tracker](https://github.com/littlebearapps/cloudflare-engineer/issues)
+2. Read our [Contributing Guide](CONTRIBUTING.md)
+3. Submit a PR!
 
 ## Security
 
@@ -510,7 +231,9 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+Distributed under the MIT License. See [LICENSE](LICENSE) for details.
+
+---
 
 ## Links
 
@@ -522,4 +245,6 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-Made with care by [Little Bear Apps](https://littlebearapps.com)
+<div align="center">
+<sub>Made with care by <a href="https://littlebearapps.com">Little Bear Apps</a></sub>
+</div>
