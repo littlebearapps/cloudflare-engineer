@@ -1,1 +1,17 @@
 blank_issues_enabled: false
+contact_links:
+  - name: 💬 GitHub Discussions
+    url: https://github.com/littlebearapps/cloudflare-engineer/discussions
+    about: Ask questions, share ideas, and connect with other users
+  - name: 📖 README Documentation
+    url: https://github.com/littlebearapps/cloudflare-engineer#readme
+    about: Read the plugin documentation and usage guide
+  - name: 📋 Changelog
+    url: https://github.com/littlebearapps/cloudflare-engineer/blob/main/CHANGELOG.md
+    about: See what's new in each version
+  - name: 🔧 Contributing Guide
+    url: https://github.com/littlebearapps/cloudflare-engineer/blob/main/CONTRIBUTING.md
+    about: Learn how to contribute to the plugin
+  - name: 🛡️ Security Policy
+    url: https://github.com/littlebearapps/cloudflare-engineer/blob/main/SECURITY.md
+    about: Report security vulnerabilities privately

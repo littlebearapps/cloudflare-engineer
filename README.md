@@ -1,10 +1,12 @@
 # Cloudflare Engineer Plugin
 
-[![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
+[![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-v2.0.12+-purple.svg)](https://claude.com/claude-code)
+[![GitHub Issues](https://img.shields.io/github/issues/littlebearapps/cloudflare-engineer)](https://github.com/littlebearapps/cloudflare-engineer/issues)
+[![GitHub Discussions](https://img.shields.io/github/discussions/littlebearapps/cloudflare-engineer)](https://github.com/littlebearapps/cloudflare-engineer/discussions)
 
-A Claude Code plugin that provides **Platform Architect** capabilities for designing, implementing, optimizing, and securing Cloudflare Workers applications. Features **D1 Query Optimization**, **Cloudflare Workflows**, **External Logging**, **Python Workers**, **Zero Trust Tooling**, and **R2 Cost Protection**.
+A Claude Code plugin that provides **Platform Architect** capabilities for designing, implementing, optimizing, and securing Cloudflare Workers applications. Features **D1 Query Optimization**, **Cloudflare Workflows**, **External Logging**, **Python Workers**, **Zero Trust Tooling**, **R2 Cost Protection**, and **AI Cost Detection**.
 
 ## Quick Install
 
@@ -32,7 +34,30 @@ To update to the latest version:
 | **13 Skills** | D1 Query Optimization, Cloudflare Workflows, Cost optimization, security auditing, architecture design, Loop Protection, Zero Trust, Custom Hostnames, Media/Streaming, and more |
 | **5 Commands** | `/cf-costs`, `/cf-audit` (with Resource Discovery), `/cf-design`, `/cf-pattern`, `/cf-logs` |
 | **3 Agents** | Deep analysis with MCP tool integration |
-| **1 Hook** | Pre-deploy validation with Performance Budgeter, Loop Detection, and Query Checks |
+| **3 Hooks** | SessionStart (project detection), PreToolUse (pre-deploy validation), PostToolUse (deploy verification) |
+
+## What's New in v1.6.0
+
+### Session-Aware Hooks
+
+The plugin now includes a complete hook lifecycle for Cloudflare projects:
+
+| Hook | When | What It Does |
+|------|------|--------------|
+| **SessionStart** | Session begins | Detects CF projects, announces bindings (D1, R2, KV, Queues, DO, AI, Vectorize, Workflows) |
+| **PreToolUse** | Before `wrangler deploy` | Validates config and source code (30+ rules) |
+| **PostToolUse** | After `wrangler deploy` | Parses deployment output, suggests next steps (`/cf-audit --validate`) |
+
+SessionStart uses fingerprint caching to avoid repeated announcements when resuming sessions.
+
+### AI Cost Detection
+
+New rules in the pre-deploy hook detect expensive Workers AI patterns:
+
+| Rule | Severity | Detection |
+|------|----------|-----------|
+| **AI001** | 🟠 HIGH | Expensive model usage (llama-3.1-405b, llama-3.3-70b, deepseek-r1) without cost awareness comment |
+| **AI002** | 🟡 MEDIUM | AI binding without cache wrapper pattern |
 
 ## What's New in v1.5.0
 
@@ -247,38 +272,67 @@ Skills activate automatically based on your questions:
 
 ## Pre-Deploy Validation Hook
 
-Automatically validates `wrangler.toml` before deployment:
+Automatically validates `wrangler.toml` and source code before deployment.
 
-| Check | Severity | Description |
-|-------|----------|-------------|
-| SEC001 | CRITICAL | Plaintext secrets in config |
-| RES001 | HIGH | Queues without dead letter queues |
-| RES002 | MEDIUM | Missing max_concurrency limit |
-| COST001 | MEDIUM | High retry counts ($0.40/M per retry) |
-| PERF001 | LOW | Smart placement disabled |
-| PERF004 | LOW | Observability not configured |
-| PERF005 | CRITICAL/HIGH | Bundle size exceeds tier limits |
-| PERF006 | HIGH | Incompatible native packages |
-| ARCH001 | MEDIUM | Deprecated `[site]` configuration |
-| BUDGET007 | CRITICAL | D1 row read explosion (unindexed queries) |
-| BUDGET008 | MEDIUM | R2 Class B without edge caching |
-| BUDGET009 | HIGH | R2 Infrequent Access with reads |
-| LOOP001 | MEDIUM | Missing `cpu_ms` limit |
-| LOOP002 | CRITICAL | D1 query in loop - N+1 |
-| LOOP003 | HIGH | R2 write in loop |
-| LOOP004 | MEDIUM | `setInterval` in DO |
-| LOOP005 | CRITICAL | Worker self-fetch recursion |
-| LOOP006 | HIGH | Queue without DLQ |
-| LOOP007 | CRITICAL | Unbounded `while(true)` |
-| LOOP008 | MEDIUM | High queue retry count |
-| QUERY001 | HIGH | SELECT * without LIMIT (NEW v1.5.0) |
-| QUERY005 | HIGH | Drizzle .all() without .limit() (NEW v1.5.0) |
-| R2002 | MEDIUM | R2.get() without cache wrapper (NEW v1.5.0) |
-| OBS001 | LOW | Observability not enabled (NEW v1.5.0) |
-| OBS002 | MEDIUM | Logs enabled but no export destination (NEW v1.5.0) |
-| OBS003 | INFO | High sampling rate with high-volume worker (NEW v1.5.0) |
+### Severity Levels and Blocking Behavior
 
-**CRITICAL issues block deployment.** This includes loop safety and cost issues that could cause billing explosions.
+| Severity | Blocking? | Action |
+|----------|-----------|--------|
+| 🔴 CRITICAL | **YES** | Deployment blocked - must fix or suppress |
+| 🟠 HIGH | No | Warning only - deployment allowed |
+| 🟡 MEDIUM | No | Advisory - deployment allowed |
+| 🔵 LOW/INFO | No | Informational - deployment allowed |
+
+### Detection Types
+
+The hook uses three detection methods with different confidence levels:
+
+| Type | Meaning | False Positive Risk |
+|------|---------|---------------------|
+| `[CONFIG]` | Found directly in wrangler.toml | Very low - definite issue |
+| `[STATIC]` | Code pattern match in source | Low - high confidence |
+| `[HEURISTIC]` | Inferred from names/patterns | **Higher** - may need verification |
+
+**Heuristic detections** include verification instructions in their output. For example, bucket name patterns may not reflect actual storage class settings.
+
+### Rule Catalog
+
+| Check | Severity | Detection | Description |
+|-------|----------|-----------|-------------|
+| SEC001 | 🔴 CRITICAL | HEURISTIC | Plaintext secrets in config |
+| RES001 | 🟠 HIGH | CONFIG | Queues without dead letter queues |
+| RES002 | 🟡 MEDIUM | CONFIG | Missing max_concurrency limit |
+| COST001 | 🟡 MEDIUM | CONFIG | High retry counts ($0.40/M per retry) |
+| PERF001 | 🔵 LOW | CONFIG | Smart placement disabled |
+| PERF004 | 🔵 LOW | CONFIG | Observability not configured |
+| PERF005 | 🔴/🟠 | HEURISTIC | Bundle size exceeds tier limits |
+| PERF006 | 🟠 HIGH | STATIC | Incompatible native packages |
+| ARCH001 | 🟡 MEDIUM | CONFIG | Deprecated `[site]` configuration |
+| BUDGET007 | 🔴 CRITICAL | STATIC | D1 row read explosion (unindexed queries) |
+| BUDGET008 | 🟡 MEDIUM | STATIC | R2 Class B without edge caching |
+| BUDGET009 | 🔵 INFO | HEURISTIC | R2 bucket name suggests Infrequent Access |
+| LOOP001 | 🟡 MEDIUM | CONFIG | Missing `cpu_ms` limit |
+| LOOP002 | 🔴 CRITICAL | STATIC | D1 query in loop - N+1 |
+| LOOP003 | 🟠 HIGH | STATIC | R2 write in loop |
+| LOOP004 | 🟡 MEDIUM | STATIC | `setInterval` in DO |
+| LOOP005 | 🔴/🟠 | STATIC/HEURISTIC | Worker self-fetch recursion |
+| LOOP006 | 🟠 HIGH | CONFIG | Queue without DLQ |
+| LOOP007 | 🔴 CRITICAL | STATIC | Unbounded `while(true)` |
+| LOOP008 | 🟡 MEDIUM | CONFIG | High queue retry count |
+| QUERY001 | 🟠 HIGH | STATIC | SELECT * without LIMIT |
+| QUERY005 | 🟠 HIGH | STATIC | Drizzle .all() without .limit() |
+| R2002 | 🟡 MEDIUM | STATIC | R2.get() without cache wrapper |
+| OBS002 | 🟡 MEDIUM | HEURISTIC | Logs enabled but no export destination |
+| OBS003 | 🔵 INFO | CONFIG | High sampling rate with high-volume worker |
+| AI001 | 🟠 HIGH | STATIC | Expensive AI model without cost awareness |
+| AI002 | 🟡 MEDIUM | STATIC | AI binding without cache wrapper |
+
+### Test File Exclusion
+
+The hook automatically skips test files to reduce false positives. These patterns are excluded:
+- `*.test.ts`, `*.spec.ts`, `*.e2e.ts`
+- `__tests__/`, `/test/`, `/tests/`
+- `*.stories.ts`, `/fixtures/`, `/mocks/`
 
 ### Suppressing Warnings
 
@@ -318,13 +372,15 @@ LOOP001             # We need high cpu_ms for this worker
 
 Format: `RULE_ID` or `RULE_ID:context` (context = queue name, bucket name, etc.)
 
-### Emergency Bypass
+### Emergency Bypass (Session-Only)
 
-To bypass validation entirely (emergency deploys):
+To bypass validation entirely for emergency deploys:
 
 ```bash
 SKIP_PREDEPLOY_CHECK=1 npx wrangler deploy
 ```
+
+This bypass is **session-only** and reverts automatically in a new session. The hook detects this environment variable both when set in the shell environment and when prefixed to the command.
 
 ### Performance Budgeter
 
@@ -492,13 +548,21 @@ cloudflare-engineer/
 │   └── workflow-architect/       # Cloudflare Workflows (NEW v1.5.0)
 ├── agents/                       # 3 deep-analysis agents
 ├── commands/                     # 5 slash commands (including /cf-logs)
-├── hooks/                        # Pre-deploy validation + Loop Detection + Query Checks
+├── hooks/                        # 3 hooks: SessionStart, PreToolUse, PostToolUse
 ├── COST_SENSITIVE_RESOURCES.md   # Cost trap catalog
 ├── LICENSE                       # MIT
 ├── CONTRIBUTING.md               # Contribution guide
 ├── SECURITY.md                   # Security policy
 └── CHANGELOG.md                  # Version history
 ```
+
+## Support & Community
+
+| Channel | Purpose |
+|---------|---------|
+| [GitHub Issues](https://github.com/littlebearapps/cloudflare-engineer/issues) | Bug reports and feature requests |
+| [GitHub Discussions](https://github.com/littlebearapps/cloudflare-engineer/discussions) | Questions, ideas, and community chat |
+| [Changelog](CHANGELOG.md) | Version history and what's new |
 
 ## Contributing
 

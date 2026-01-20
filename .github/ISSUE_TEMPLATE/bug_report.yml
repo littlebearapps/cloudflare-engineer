@@ -1,0 +1,151 @@
+name: 🐛 Bug Report
+description: Report a bug in the Cloudflare Engineer plugin
+title: "[BUG] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the sections below to help us understand and fix the issue.
+
+        Before submitting, please check:
+        - You're using the latest plugin version (check CHANGELOG.md)
+        - This issue hasn't already been reported in [existing issues](https://github.com/littlebearapps/cloudflare-engineer/issues?q=is%3Aissue+label%3Abug)
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight Checklist
+      options:
+        - label: I have searched [existing issues](https://github.com/littlebearapps/cloudflare-engineer/issues?q=is%3Aissue+label%3Abug) and this hasn't been reported
+          required: true
+        - label: I am using the latest plugin version
+          required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What's Wrong?
+      description: Describe what's happening that shouldn't be
+      placeholder: |
+        When I run /cf-audit, the pre-deploy hook shows false positives for LOOP005...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What Should Happen?
+      description: Describe the expected behaviour
+      placeholder: The hook should not flag recursive functions that have depth limits
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Clear steps anyone can follow to reproduce the issue
+      placeholder: |
+        1. Create a wrangler.toml with...
+        2. Add this code to src/index.ts...
+        3. Run `/cf-audit`
+        4. See false positive for...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      description: Which part of the plugin is affected?
+      options:
+        - Pre-deploy hook (validation)
+        - SessionStart hook (project detection)
+        - PostToolUse hook (deploy verification)
+        - Skill (auto-invoked guidance)
+        - Agent (deep analysis)
+        - Command (/cf-*)
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: cloudflare_service
+    attributes:
+      label: Cloudflare Service
+      description: Which Cloudflare service is this related to?
+      multiple: true
+      options:
+        - Workers
+        - D1
+        - R2
+        - KV
+        - Queues
+        - Durable Objects
+        - AI Gateway / Workers AI
+        - Vectorize
+        - Workflows
+        - Access / Zero Trust
+        - Custom Hostnames
+        - Stream / Images
+        - Not service-specific
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant Configuration
+      description: Paste relevant parts of your wrangler.toml (remove secrets!)
+      render: toml
+    validations:
+      required: false
+
+  - type: textarea
+    id: error_output
+    attributes:
+      label: Error Output
+      description: Paste any error messages or unexpected output
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: plugin_version
+    attributes:
+      label: Plugin Version
+      description: Which version of the plugin? (Check .claude-plugin/plugin.json)
+      placeholder: "e.g., 1.6.0"
+    validations:
+      required: true
+
+  - type: input
+    id: claude_code_version
+    attributes:
+      label: Claude Code Version
+      description: Run `claude --version`
+      placeholder: "e.g., 2.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - macOS
+        - Ubuntu/Debian Linux
+        - Other Linux
+        - Windows
+        - WSL
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other information that might help (screenshots, related issues, workarounds tried)
+    validations:
+      required: false
