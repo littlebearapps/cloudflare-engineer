@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Cloudflare engineering tools for Claude Code by Little Bear Apps",
-    "version": "1.0.0"
+    "version": "1.5.1"
   },
   "plugins": [
     {
       "name": "cloudflare-engineer",
       "source": "./",
-      "description": "Senior Cloudflare Systems Engineer capabilities - architecture design, cost optimization, security auditing, and implementation patterns",
-      "version": "1.1.0",
+      "description": "Platform Architect capabilities for Cloudflare - D1 Query Optimization, Cloudflare Workflows, External Logging (Axiom/Better Stack), Python Workers, Zero Trust Tooling, and R2 Cost Protection. Includes Edge-Native Constraints, Vibecoder Proactive Safeguards, Loop Protection, billing safety, recursion guards, queue safety, Privacy Filters, and cost simulation.",
+      "version": "1.5.1",
       "author": {
         "name": "Little Bear Apps",
         "email": "hello@littlebearapps.com"
@@ -32,7 +32,27 @@
         "infrastructure",
         "security",
         "cost-optimization",
-        "architecture"
+        "zero-trust",
+        "access",
+        "custom-hostnames",
+        "saas",
+        "stream",
+        "images",
+        "loop-protection",
+        "billing-safety",
+        "recursion-guard",
+        "containers",
+        "observability",
+        "opentelemetry",
+        "assets",
+        "query-optimizer",
+        "workflows",
+        "external-logging",
+        "axiom",
+        "betterstack",
+        "python-workers",
+        "privacy",
+        "tunnel"
       ],
       "category": "cloud-infrastructure"
     }
