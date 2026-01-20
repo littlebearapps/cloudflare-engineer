@@ -9,13 +9,17 @@ A Claude Code plugin that provides **Platform Architect** capabilities for desig
 ## Quick Install
 
 ```bash
-/plugin install github:littlebearapps/cloudflare-engineer
+# Step 1: Add the marketplace
+/plugin marketplace add littlebearapps/cloudflare-engineer
+
+# Step 2: Install the plugin
+/plugin install cloudflare-engineer@littlebearapps-cloudflare-engineer
 ```
 
 To update to the latest version:
 
 ```bash
-/plugin update cloudflare-engineer
+/plugin update cloudflare-engineer@littlebearapps-cloudflare-engineer
 ```
 
 > [!TIP]
