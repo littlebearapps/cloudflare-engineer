@@ -1,6 +1,6 @@
 # Cloudflare Engineer Plugin
 
-[![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
+[![Version](https://img.shields.io/badge/version-1.6.1-blue.svg)](https://github.com/littlebearapps/cloudflare-engineer/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-v2.0.12+-purple.svg)](https://claude.com/claude-code)
 [![GitHub Issues](https://img.shields.io/github/issues/littlebearapps/cloudflare-engineer)](https://github.com/littlebearapps/cloudflare-engineer/issues)
@@ -71,14 +71,22 @@ All 13 skills activate automatically based on your questions.
 
 Before `wrangler deploy`, our hook validates your config and source code against 30+ rules.
 
+### Philosophy: Warnings by Default
+
+**All rules are warnings.** Deployment always proceeds. You stay in control.
+
+- Claude sees the warnings and can advise you
+- You decide which issues matter for your project
+- Opt-in to blocking for rules you care about
+
 ### Severity Levels
 
-| Severity | Blocking? | Example Detection |
-|----------|-----------|-------------------|
-| 🔴 CRITICAL | **Yes** | `while(true)` without break, D1 query inside `map()` |
-| 🟠 HIGH | No | Plaintext secrets, R2 writes in loops |
-| 🟡 MEDIUM | No | Missing DLQ, deprecated `[site]` config |
-| 🔵 LOW/INFO | No | Smart placement disabled, observability not configured |
+| Severity | Default Behavior | Example Detection |
+|----------|------------------|-------------------|
+| 🔴 CRITICAL | Warning (opt-in to block) | `while(true)` without break, D1 query inside `map()` |
+| 🟠 HIGH | Warning | Plaintext secrets, R2 writes in loops |
+| 🟡 MEDIUM | Warning | Missing DLQ, deprecated `[site]` config |
+| 🔵 LOW/INFO | Warning | Smart placement disabled, observability not configured |
 
 ### Key Rules
 
@@ -92,6 +100,21 @@ Before `wrangler deploy`, our hook validates your config and source code against
 | RES001 | 🟠 HIGH | Queue without dead letter queue |
 | BUDGET008 | 🟡 MEDIUM | R2 Class B without edge caching |
 | AI001 | 🟠 HIGH | Expensive AI model without cost awareness |
+
+### Enabling Blocking (Opt-In)
+
+Add rules to `.pre-deploy-ignore` with `!` prefix to make them block deployment:
+
+```bash
+# .pre-deploy-ignore
+
+# Enable blocking for these rules (exit 2)
+!SEC001     # Block on plaintext secrets
+!LOOP005    # Block on self-recursion
+!LOOP007    # Block on unbounded loops
+```
+
+When a blocking rule triggers, the hook exits with code 2, prompting Claude to address the issue or ask for your decision.
 
 ### Suppressing False Positives
 
@@ -112,8 +135,13 @@ while (true) { // @pre-deploy-ok LOOP007
 **Project-level `.pre-deploy-ignore`** file:
 
 ```bash
+# Suppress rules (hide warnings)
 RES001:my-queue     # Suppress for specific queue
 LOOP001             # Allow high cpu_ms for this worker
+LOOP002:helpers.ts  # Suppress for specific file
+
+# Enable blocking (opt-in)
+!SEC001             # Block on plaintext secrets
 ```
 
 **Emergency bypass** (session-only):

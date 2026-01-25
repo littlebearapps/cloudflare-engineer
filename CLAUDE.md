@@ -2,7 +2,7 @@
 
 ## Overview
 
-Claude Code plugin providing **Platform Architect** capabilities for Cloudflare with **D1 Query Optimization**, **Cloudflare Workflows**, **External Logging**, **Python Workers**, **Zero Trust Tooling**, **R2 Cost Protection**, and **AI Cost Detection** (v1.6.0).
+Claude Code plugin providing **Platform Architect** capabilities for Cloudflare with **D1 Query Optimization**, **Cloudflare Workflows**, **External Logging**, **Python Workers**, **Zero Trust Tooling**, **R2 Cost Protection**, **AI Cost Detection**, and **Opt-In Blocking** (v1.6.1).
 
 **GitHub**: https://github.com/littlebearapps/cloudflare-engineer
 **Local**: `~/.claude/local-marketplace/cloudflare-engineer/`
@@ -89,9 +89,11 @@ mkdir -p skills/new-skill
 **Input**: JSON via stdin with `tool_name` and `tool_input.command`
 
 **Output**:
-- Exit 0 = allow (includes HIGH/MEDIUM/LOW/INFO warnings)
-- Exit 2 = block (CRITICAL issues only)
+- Exit 0 = allow (default - all rules are warnings)
+- Exit 2 = block (only for rules with `!RULE_ID` in .pre-deploy-ignore)
 - Self-documenting output with severity guide and detection types
+
+**Philosophy**: Warnings by default, blocking is opt-in. Users stay in control.
 
 **Detection Types** (confidence levels):
 - `[CONFIG]` - Found in wrangler.toml - definite issue
@@ -108,11 +110,18 @@ mkdir -p skills/new-skill
 while (true) { /* @pre-deploy-ok LOOP007 */ }  // Inline suppression
 ```
 
-**Project-Level Ignore**: Create `.pre-deploy-ignore` in project root:
+**Project-Level Configuration**: Create `.pre-deploy-ignore` in project root:
 ```bash
+# Suppress rules (hide warnings)
 RES001:my-queue     # Suppress for specific queue
 COST001             # Suppress globally
 LOOP001             # Allow high cpu_ms
+LOOP002:helpers.ts  # Suppress for specific file
+
+# Enable blocking (opt-in)
+!SEC001             # Block on plaintext secrets
+!LOOP005            # Block on self-recursion
+!LOOP007            # Block on unbounded loops
 ```
 
 **Testing**:
@@ -177,7 +186,7 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 
 ## Validation Rule IDs
 
-**Blocking**: Only CRITICAL blocks deployment. All others are warnings.
+**Blocking**: Opt-in via `.pre-deploy-ignore` with `!RULE_ID`. All rules are warnings by default.
 
 | ID | Severity | Detection | Check |
 |----|----------|-----------|-------|
@@ -224,6 +233,7 @@ echo '{"tool_name":"Bash","tool_input":{"command":"npx wrangler deploy"}}' | \
 
 ## Version History
 
+- v1.6.1 - **Opt-In Blocking + File Path Suppression**: All rules are warnings by default (exit 0). Blocking is opt-in via `!RULE_ID` in `.pre-deploy-ignore`. File path context extraction for `RULE_ID:filename.ts` suppression. Respects user agency while maintaining visibility (13 skills, 3 agents, 5 commands, 3 hooks)
 - v1.6.0 - **Session Hooks + AI Detection**: SessionStart hook for CF project detection with fingerprint caching, PostToolUse hook for deployment verification with next-step suggestions, AI001/AI002 rules for Workers AI cost detection (expensive models, missing cache), hooks.json restructured to support SessionStart/PreToolUse/PostToolUse (13 skills, 3 agents, 5 commands, 3 hooks)
 - v1.5.1 - **Best Practices Audit**: Progressive disclosure refactoring (architect, implement, zero-trust skills split into references/), agent `<example>` blocks added for improved triggering, skill frontmatter standardisation, writing style converted to imperative form (~2,300 lines reduced through modularisation)
 - v1.5.0 - **Query Optimization + External Logging + Privacy**: D1 query-optimizer skill (QUERY001-005), workflow-architect skill for Cloudflare Workflows, cf-logs command for external logging (Axiom/Better Stack), Python Workers decision tree, Pages vs Workers migration triggers, Zero Trust extensions (Tunnel config, Access Policy Generator, ZT009-012), R2 Class B cost protection (R2002), Privacy cost traps (TRAP-PRIVACY-001-003), 7 new cost traps, 14 new validation rules (13 skills, 3 agents, 5 commands, 1 hook)
