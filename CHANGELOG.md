@@ -5,6 +5,28 @@ All notable changes to the Cloudflare Engineer plugin will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-01-25
+
+### Changed
+- **Opt-In Blocking** - Pre-deploy hook now uses warnings-only by default:
+  - All rules are warnings (exit 0) - deployment always proceeds
+  - Users configure blocking via `!RULE_ID` in `.pre-deploy-ignore`
+  - Respects user agency while maintaining visibility
+  - Example: `!SEC001` in `.pre-deploy-ignore` makes SEC001 block deployment
+- **File Path Context Extraction** - `.pre-deploy-ignore` now supports file-based suppression:
+  - `LOOP002:helpers.ts` suppresses LOOP002 only in helpers.ts
+  - Works with both full path (`src/lib/helpers.ts`) and filename only
+  - Extracted from issue messages like "at src/file.ts:227"
+
+### Fixed
+- **Env Var Bypass** - `SKIP_PREDEPLOY_CHECK=1` in command string now correctly bypasses hook
+- **Global Rule Suppression** - Rules without context (e.g., `LOOP001`) now correctly suppress all instances
+
+### Philosophy
+This release prioritises user agency. The pre-deploy hook informs rather than blocks by default.
+Users who want stricter enforcement can opt-in per-project. Claude sees all warnings and can
+advise appropriately without interrupting the deployment flow.
+
 ## [1.6.0] - 2026-01-20
 
 ### Added

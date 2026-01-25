@@ -82,25 +82,34 @@ def is_suppressed(suppressions: dict[int, set[str]], line_num: int, rule_id: str
     return None in rules or rule_id.upper() in rules
 
 
-def load_ignore_file(working_dir: str) -> dict[str, set[str]]:
-    """Load .pre-deploy-ignore file for project-level rule suppression.
+def load_ignore_file(working_dir: str) -> tuple[dict[str, set[str]], set[str]]:
+    """Load .pre-deploy-ignore file for project-level rule configuration.
 
     File format:
     ```
     # Comment lines start with #
+
+    # SUPPRESS rules (hide warnings)
     RES001              # Suppress RES001 globally
     COST001             # Suppress COST001 globally
     RES001:my-queue     # Suppress RES001 only for 'my-queue'
     LOOP001:*           # Same as just LOOP001
+
+    # BLOCKING rules (opt-in to exit 2)
+    !SEC001             # Make SEC001 block deployment
+    !LOOP005            # Make LOOP005 block deployment
     ```
 
-    Returns dict mapping rule IDs to set of contexts (empty set = global suppression).
+    Returns tuple of:
+    - ignore_rules: dict mapping rule IDs to set of contexts (empty set = global suppression)
+    - blocking_rules: set of rule IDs that should block deployment
     """
     ignore_rules: dict[str, set[str]] = {}
+    blocking_rules: set[str] = set()
     ignore_path = Path(working_dir) / ".pre-deploy-ignore"
 
     if not ignore_path.exists():
-        return ignore_rules
+        return ignore_rules, blocking_rules
 
     try:
         content = ignore_path.read_text()
@@ -110,7 +119,15 @@ def load_ignore_file(working_dir: str) -> dict[str, set[str]]:
             if not line:
                 continue
 
-            # Parse rule:context format
+            # Check for blocking rule prefix (!)
+            if line.startswith('!'):
+                rule_id = line[1:].strip().upper()
+                if rule_id:
+                    blocking_rules.add(rule_id)
+                    debug_log(f"Blocking rule enabled: {rule_id}")
+                continue
+
+            # Parse rule:context format for suppression
             if ':' in line:
                 rule_id, context = line.split(':', 1)
                 rule_id = rule_id.strip().upper()
@@ -130,11 +147,11 @@ def load_ignore_file(working_dir: str) -> dict[str, set[str]]:
                     # Empty string means global suppression
                     ignore_rules[rule_id].add('')
 
-        debug_log(f"Loaded .pre-deploy-ignore: {ignore_rules}")
+        debug_log(f"Loaded .pre-deploy-ignore: ignore={ignore_rules}, blocking={blocking_rules}")
     except Exception as e:
         debug_log(f"Failed to load .pre-deploy-ignore: {e}")
 
-    return ignore_rules
+    return ignore_rules, blocking_rules
 
 
 def is_test_file(file_path: str) -> bool:
@@ -196,22 +213,42 @@ def filter_ignored_issues(issues: list[dict], ignore_rules: dict[str, set[str]])
         rule_id = issue.get("id", "")
         message = issue.get("message", "")
 
-        # Extract context from message if present (e.g., queue name, bucket name)
+        # Extract context from message if present (e.g., queue name, bucket name, file path)
         context = ""
+
         # Try to extract queue name
         queue_match = re.search(r"Queue '([^']+)'", message)
         if queue_match:
             context = queue_match.group(1)
+
         # Try to extract bucket name
         bucket_match = re.search(r"bucket '([^']+)'", message)
         if bucket_match:
             context = bucket_match.group(1)
 
-        if is_rule_ignored(ignore_rules, rule_id, context):
-            debug_log(f"Ignored {rule_id} (context: {context or 'global'})")
-            continue
+        # Try to extract file path (e.g., "at src/file.ts:227")
+        if not context:
+            file_match = re.search(r' at ([^:]+):\d+', message)
+            if file_match:
+                file_path = file_match.group(1)
+                # Try full path first, then just filename
+                context = file_path
 
-        filtered.append(issue)
+        # Also try just the filename for convenience
+        contexts_to_check = [context]
+        if context and '/' in context:
+            contexts_to_check.append(os.path.basename(context))
+
+        # Check if rule is ignored with any of the contexts
+        ignored = False
+        for ctx in contexts_to_check:
+            if is_rule_ignored(ignore_rules, rule_id, ctx):
+                debug_log(f"Ignored {rule_id} (context: {ctx or 'global'})")
+                ignored = True
+                break
+
+        if not ignored:
+            filtered.append(issue)
 
     return filtered
 
@@ -1313,12 +1350,20 @@ def check_queue_dlq_comprehensive(config: dict) -> list[dict]:
     return issues
 
 
-def run_audit(config: dict, working_dir: str = "") -> list[dict]:
-    """Run all audit checks on config."""
+def run_audit(config: dict, working_dir: str = "") -> tuple[list[dict], set[str]]:
+    """Run all audit checks on config.
+
+    Returns tuple of:
+    - issues: list of detected issues
+    - blocking_rules: set of rule IDs configured to block deployment
+    """
     issues = []
 
-    # Load .pre-deploy-ignore file for project-level suppressions
-    ignore_rules = load_ignore_file(working_dir) if working_dir else {}
+    # Load .pre-deploy-ignore file for project-level suppressions and blocking config
+    if working_dir:
+        ignore_rules, blocking_rules = load_ignore_file(working_dir)
+    else:
+        ignore_rules, blocking_rules = {}, set()
 
     # Security checks
     issues.extend(check_secrets_in_vars(config))
@@ -1364,7 +1409,7 @@ def run_audit(config: dict, working_dir: str = "") -> list[dict]:
     # Apply .pre-deploy-ignore suppressions
     issues = filter_ignored_issues(issues, ignore_rules)
 
-    return issues
+    return issues, blocking_rules
 
 
 def format_issues(issues: list[dict], blocking_rules: set[str] = None) -> str:
@@ -1399,13 +1444,17 @@ def format_issues(issues: list[dict], blocking_rules: set[str] = None) -> str:
     lines.append("━" * 60)
     lines.append("")
 
-    # Updated severity guide to match two-tier system
+    # Severity guide - blocking is now opt-in
     if blocking_rules:
-        lines.append("BLOCKING RULES (only these can stop deployment):")
-        lines.append("  SEC001, LOOP005, LOOP007 → irreversible/catastrophic")
+        lines.append("BLOCKING RULES (configured in .pre-deploy-ignore):")
+        lines.append(f"  {', '.join(sorted(blocking_rules))}")
+        lines.append("")
+    else:
+        lines.append("BLOCKING: Disabled (all rules are warnings)")
+        lines.append("  To enable: add !RULE_ID to .pre-deploy-ignore")
         lines.append("")
     lines.append("SEVERITY LEVELS:")
-    lines.append("  🔴 CRITICAL = Serious issue (blocks if in blocking rules)")
+    lines.append("  🔴 CRITICAL = Serious issue")
     lines.append("  🟠 HIGH     = Important warning - review recommended")
     lines.append("  🟡 MEDIUM   = Advisory - consider addressing")
     lines.append("  🔵 LOW/INFO = Informational")
@@ -1492,31 +1541,29 @@ def check_bypass_in_command(command: str) -> bool:
 def main():
     """Main hook function.
 
-    TWO-TIER BLOCKING SYSTEM (v1.6.0):
+    OPT-IN BLOCKING SYSTEM (v1.7.0):
 
-    TIER 1 - BLOCKING RULES (exit 2):
-    Only these rules block deployment. They represent irreversible or
-    catastrophic outcomes that justify interrupting the user:
-    - SEC001: Plaintext secrets → credential leak (irreversible)
-    - LOOP005: Worker self-recursion → infinite billing chain
-    - LOOP007: Unbounded while(true) → billing explosion
+    DEFAULT BEHAVIOR:
+    All rules are WARNINGS only. Deployment always proceeds (exit 0).
+    Claude sees the output and can advise the user about issues.
+    This respects user agency while ensuring visibility.
 
-    TIER 2 - WARNING RULES (exit 0):
-    Everything else is a warning. Deployment proceeds, but Claude sees
-    the output and can present issues to the user. This respects user
-    agency while ensuring awareness.
+    OPT-IN BLOCKING:
+    Users can configure specific rules to block deployment by adding
+    them to .pre-deploy-ignore with a ! prefix:
 
-    Philosophy: Block = "Request for Agent Intervention", not hard stop.
-    In Claude Code context, exit 2 returns control to Claude, which can
-    then interact with the user about the issue.
+    ```
+    # .pre-deploy-ignore
+    !SEC001     # Block on plaintext secrets
+    !LOOP005    # Block on self-recursion
+    !LOOP007    # Block on unbounded loops
+    ```
+
+    Philosophy: Warnings inform, blocking is opt-in.
+    Users who want stricter enforcement can configure it per-project.
     """
-    # BLOCKING RULES - only these specific rules cause exit 2
-    # Criteria: high-confidence detection + catastrophic/irreversible outcome
-    BLOCKING_RULES = {
-        "SEC001",   # Plaintext secrets → credential leak (irreversible)
-        "LOOP005",  # Worker self-recursion → infinite billing chain
-        "LOOP007",  # Unbounded while(true) → billing explosion
-    }
+    # No default blocking rules - all blocking is opt-in via .pre-deploy-ignore
+    # blocking_rules will be loaded from the config file
 
     # Check for environment variable bypass (in hook's environment)
     if os.environ.get("SKIP_PREDEPLOY_CHECK", "").lower() in ("1", "true", "yes"):
@@ -1571,45 +1618,45 @@ def main():
         sys.exit(0)  # Allow if we can't parse
 
     # Run audit with working directory for bundle size check
-    issues = run_audit(config, working_dir)
+    issues, blocking_rules = run_audit(config, working_dir)
 
     if not issues:
         debug_log("No issues found, allowing deploy")
         sys.exit(0)
 
-    # Separate blocking issues from warnings
-    blocking_issues = [i for i in issues if i.get("id") in BLOCKING_RULES]
-    warning_issues = [i for i in issues if i.get("id") not in BLOCKING_RULES]
+    # Separate blocking issues from warnings (blocking is opt-in via .pre-deploy-ignore)
+    blocking_issues = [i for i in issues if i.get("id") in blocking_rules]
+    warning_issues = [i for i in issues if i.get("id") not in blocking_rules]
 
     # Count by severity for summary display
     high_count = sum(1 for i in warning_issues if i.get("severity") in ("CRITICAL", "HIGH"))
     medium_count = sum(1 for i in warning_issues if i.get("severity") == "MEDIUM")
 
-    # Format and output issues (pass BLOCKING_RULES for proper categorization)
-    output = format_issues(issues, BLOCKING_RULES)
+    # Format and output issues (pass blocking_rules for proper categorization)
+    output = format_issues(issues, blocking_rules if blocking_rules else None)
 
     # DECISION: Block or Allow?
     if blocking_issues:
-        # TIER 1: These specific rules block deployment
+        # User has opted-in to blocking for these rules via .pre-deploy-ignore
         # Format agent-readable blocking message
         output += "\n"
         output += "━" * 60 + "\n"
-        output += "🛑 DEPLOYMENT INTERRUPTED\n"
+        output += "🛑 DEPLOYMENT BLOCKED (by project config)\n"
         output += "━" * 60 + "\n"
         output += "\n"
         output += f"WHAT: {len(blocking_issues)} blocking issue(s) detected\n"
-        output += "WHY:  These patterns can cause irreversible damage or billing explosion\n"
+        output += "WHY:  Project .pre-deploy-ignore has opted into blocking for these rules\n"
         output += "\n"
         output += "BLOCKING ISSUES:\n"
         for issue in blocking_issues:
             rule_id = issue.get("id", "UNKNOWN")
             output += f"  • {rule_id}: {issue.get('message', 'No message')}\n"
         output += "\n"
-        output += "OPTIONS FOR CLAUDE/USER:\n"
+        output += "OPTIONS:\n"
         output += "  1. FIX: Address the issues listed above (recommended)\n"
         output += "  2. SUPPRESS: Add inline comment: // @pre-deploy-ok RULE_ID\n"
-        output += "  3. OVERRIDE: Ask user to confirm deployment despite risks\n"
-        output += "     → Run: SKIP_PREDEPLOY_CHECK=1 npx wrangler deploy\n"
+        output += "  3. DISABLE BLOCKING: Remove !RULE_ID from .pre-deploy-ignore\n"
+        output += "  4. OVERRIDE: Run with SKIP_PREDEPLOY_CHECK=1\n"
         output += "\n"
         if warning_issues:
             output += f"ALSO: {len(warning_issues)} additional warnings (non-blocking)\n"
@@ -1618,19 +1665,24 @@ def main():
         print(output, file=sys.stderr)
         sys.exit(2)  # Block deployment - returns control to Claude
     else:
-        # TIER 2: All issues are warnings - deployment proceeds
+        # Default: All issues are warnings - deployment proceeds
         output += "\n"
         output += "━" * 60 + "\n"
-        output += "✅ DEPLOYMENT ALLOWED (with warnings)\n"
+        output += "✅ DEPLOYMENT ALLOWED\n"
         output += "━" * 60 + "\n"
         output += "\n"
-        if high_count > 0:
-            output += f"⚠️  {high_count} high-priority warning(s) detected\n"
-            output += "   Consider reviewing before production deployment.\n"
-        if medium_count > 0:
-            output += f"ℹ️  {medium_count} advisory issue(s) detected\n"
+        total_warnings = len(warning_issues)
+        if total_warnings > 0:
+            if high_count > 0:
+                output += f"⚠️  {high_count} high-priority warning(s) detected\n"
+            if medium_count > 0:
+                output += f"ℹ️  {medium_count} advisory issue(s) detected\n"
+            output += "\n"
+            output += "TIP: To block deployment on specific rules, add to .pre-deploy-ignore:\n"
+            output += "     !SEC001    # Block on plaintext secrets\n"
+            output += "     !LOOP005   # Block on self-recursion\n"
         output += "\n"
-        output += "Deployment proceeding. Review warnings above if needed.\n"
+        output += "Deployment proceeding.\n"
         output += "━" * 60 + "\n"
 
         print(output, file=sys.stderr)
